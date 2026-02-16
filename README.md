@@ -148,4 +148,4 @@ For `list_channels` and `search_messages`, the same [permission computation](htt
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style guidelines, and how to submit changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style guidelines, and how to submit changes. Please also review the [AI Usage Policy](AI_POLICY.md) before contributing.
