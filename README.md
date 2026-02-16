@@ -15,8 +15,6 @@
   </p>
 </p>
 
-Exposes Discord read/search/post operations as [MCP](https://modelcontextprotocol.io/) tools. Built on [Cloudflare Workers](https://developers.cloudflare.com/workers/).
-
 ## About
 
 There is no official Discord MCP server, yet much of the coordination with contributors in the MCP community happens on Discord. GuildBridge fills that gap for me — it gives MCP clients authenticated, permission-aware access to Discord servers so that AI agents can read, search, and post messages where the conversation is already happening. It very much came to life on the heels of a problem that _I had_ that I solved by building my own MCP server.
