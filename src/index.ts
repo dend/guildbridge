@@ -306,7 +306,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 	}
 }
 
-export default new OAuthProvider({
+const provider = new OAuthProvider({
 	apiHandler: GuildBridgeMCP.serve("/mcp"),
 	apiRoute: "/mcp",
 	authorizeEndpoint: "/authorize",
@@ -314,3 +314,24 @@ export default new OAuthProvider({
 	clientRegistrationEndpoint: "/register",
 	defaultHandler: DiscordHandler as any,
 });
+
+export default {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		const response = await provider.fetch(request, env, ctx);
+
+		if (response.status === 401) {
+			const origin = new URL(request.url).origin;
+			const existingWwwAuth = response.headers.get("WWW-Authenticate");
+			if (existingWwwAuth) {
+				const newResponse = new Response(response.body, response);
+				newResponse.headers.set(
+					"WWW-Authenticate",
+					`${existingWwwAuth}, resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+				);
+				return newResponse;
+			}
+		}
+
+		return response;
+	},
+};

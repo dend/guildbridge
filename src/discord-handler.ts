@@ -16,6 +16,15 @@ import {
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
 
+app.get("/.well-known/oauth-protected-resource*", (c) => {
+	const origin = new URL(c.req.url).origin;
+	return c.json({
+		resource: `${origin}/mcp`,
+		authorization_servers: [origin],
+		bearer_methods_supported: ["header"],
+	});
+});
+
 app.get("/authorize", async (c) => {
 	const oauthReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
 	const { clientId } = oauthReqInfo;
