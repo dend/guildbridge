@@ -1,8 +1,28 @@
-# GuildBridge
+<h1>
+<p align="center">
+  GuildBridge
+</h1>
+  <p align="center">
+    A remote MCP server for Discord, deployed on Cloudflare Workers.
+    <br />
+    <a href="#about">About</a>
+    ·
+    <a href="#tools">Tools</a>
+    ·
+    <a href="#access-control">Access Control</a>
+    ·
+    <a href="CONTRIBUTING.md">Contributing</a>
+  </p>
+</p>
 
-A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Discord, deployed on [Cloudflare Workers](https://developers.cloudflare.com/workers/).
+Exposes Discord read/search/post operations as [MCP](https://modelcontextprotocol.io/) tools. Built on [Cloudflare Workers](https://developers.cloudflare.com/workers/).
 
-Exposes Discord read/search/post operations as MCP tools.
+## About
+
+There is no official Discord MCP server, yet much of the coordination with contributors in the MCP community happens on Discord. GuildBridge fills that gap for me — it gives MCP clients authenticated, permission-aware access to Discord servers so that AI agents can read, search, and post messages where the conversation is already happening. It very much came to life on the heels of a problem that _I had_ that I solved by building my own MCP server.
+
+>[!WARNING]
+>The actual hosted version of this MCP server is not broadly available (I have restricted it to specific accounts and servers), but you can just as easily configure and deploy it yourself on your Cloudflare account.
 
 >[!NOTE]
 >When hosted, this MCP server authenticates users via [Discord OAuth2](https://discord.com/developers/docs/topics/oauth2) and makes all API calls with a [bot token](https://discord.com/developers/docs/reference#authentication). Role-Based Access Control (RBAC) is implemented server-side, as Discord's own auth surface doesn't enable a clean role separation and integration with messaging APIs in its OAuth implementation.

@@ -80,6 +80,10 @@ If you're working on access control or permissions logic, review these resources
 
 Bot token vs. user token distinction is important: all Discord API calls use the bot token. The user's OAuth token is only used to verify guild membership. See [CLAUDE.md — Key Design Decisions](CLAUDE.md#key-design-decisions) for the full rationale.
 
+## AI Policy
+
+If you use AI tools when contributing, please read the [AI Usage Policy](AI_POLICY.md). Disclosure is required for all AI-assisted contributions.
+
 ## Reporting Issues
 
 Open a [GitHub issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue) with:
