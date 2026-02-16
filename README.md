@@ -56,12 +56,8 @@ npx wrangler kv namespace create OAUTH_KV
 Copy the output `id` into `wrangler.jsonc` replacing `PLACEHOLDER_KV_ID`.
 
 ```bash
-# Set secrets
-npx wrangler secret put DISCORD_CLIENT_ID
-npx wrangler secret put DISCORD_CLIENT_SECRET
-npx wrangler secret put DISCORD_BOT_TOKEN
-npx wrangler secret put COOKIE_ENCRYPTION_KEY
-npx wrangler secret put ALLOWED_DISCORD_USER_IDS
+# Set secrets (bulk upload from your .dev.vars file)
+npx wrangler secret bulk .dev.vars
 
 # Deploy
 npm run deploy
