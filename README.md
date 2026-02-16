@@ -180,6 +180,32 @@ GuildBridge uses two distinct Discord tokens with intentionally separate roles:
 
 The bot token never leaves the server. The user's Discord OAuth token is obtained during the [OAuth2 login flow](https://discord.com/developers/docs/topics/oauth2), embedded into an encrypted MCP access token, and returned to the MCP client. GuildBridge does not store the user's token server-side — the MCP client holds the encrypted token and sends it with each request, where it is decrypted to extract the OAuth token for guild membership checks.
 
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant Server as GuildBridge
+    participant Discord as Discord API
+
+    note over Client,Discord: OAuth Flow (one-time setup)
+    Client->>Server: Connect to /mcp
+    Server-->>Client: 401 — authenticate via OAuth
+    Client->>Server: /authorize
+    Server->>Discord: Redirect to Discord OAuth
+    Discord-->>Server: /callback with auth code
+    Server->>Discord: Exchange code for user OAuth token
+    Discord-->>Server: User OAuth token
+    Server-->>Client: Encrypted MCP token (contains user OAuth token)
+
+    note over Client,Discord: Tool Calls (ongoing)
+    Client->>Server: Tool call + MCP token (Bearer)
+    Server->>Server: Decrypt MCP token → extract user OAuth token
+    Server->>Discord: Verify guild membership (Bearer user OAuth token)
+    Discord-->>Server: User's guild list
+    Server->>Discord: Execute tool action (Bot token from env)
+    Discord-->>Server: API response
+    Server-->>Client: Tool result
+```
+
 During the OAuth flow, short-lived session state is managed via:
 
 - **CSRF token** — HTTP-only cookie, validates the approval form submission (600s TTL)
