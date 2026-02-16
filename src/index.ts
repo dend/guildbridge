@@ -17,7 +17,7 @@ import type { Props } from "./utils";
 
 export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> {
 	server = new McpServer({
-		name: "Guildbridge",
+		name: "GuildBridge",
 		version: "1.0.0",
 	});
 

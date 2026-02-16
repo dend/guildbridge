@@ -1,4 +1,4 @@
-# Guildbridge
+# GuildBridge
 
 Remote MCP server for Discord, deployed on Cloudflare Workers. Exposes Discord read/search/post operations as MCP tools. Uses Discord OAuth to authenticate users and a Discord bot token for API calls.
 

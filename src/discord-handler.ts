@@ -44,7 +44,7 @@ app.get("/authorize", async (c) => {
 		client: await c.env.OAUTH_PROVIDER.lookupClient(clientId),
 		csrfToken,
 		server: {
-			name: "Guildbridge",
+			name: "GuildBridge",
 			description: "Discord MCP Server — access Discord conversations through MCP tools.",
 		},
 		setCookie,
