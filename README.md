@@ -63,6 +63,9 @@ The server runs at `http://localhost:8788`. The [MCP endpoint](https://modelcont
 
 ### `.dev.vars`
 
+>[!NOTE]
+>You will need to fill this out prior to deployment to ensure that the MCP server can actually talk to Discord's APIs.
+
 | Variable | Description |
 |---|---|
 | `DISCORD_CLIENT_ID` | OAuth2 client ID from Discord Developer Portal |
