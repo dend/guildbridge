@@ -149,6 +149,16 @@ app.get("/callback", async (c) => {
 		avatar: string | null;
 	};
 
+	// Check allowlist
+	const allowedUsers = (env.ALLOWED_DISCORD_USER_IDS || "")
+		.split(",")
+		.map((id) => id.trim())
+		.filter(Boolean);
+
+	if (allowedUsers.length > 0 && !allowedUsers.includes(user.id)) {
+		return c.text(`Access denied: user ${user.username} (${user.id}) is not authorized`, 403);
+	}
+
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		request: oauthReqInfo,
 		userId: user.id,

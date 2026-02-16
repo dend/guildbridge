@@ -43,7 +43,8 @@ The server runs at `http://localhost:8788`. The MCP endpoint is at `/mcp`.
 | `DISCORD_CLIENT_ID` | OAuth2 client ID from Discord Developer Portal |
 | `DISCORD_CLIENT_SECRET` | OAuth2 client secret |
 | `DISCORD_BOT_TOKEN` | Bot token (used for all Discord API calls) |
-| `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies (e.g. `openssl rand -hex 16`) |
+| `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies — generate one with `openssl rand -hex 16` |
+| `ALLOWED_DISCORD_USER_IDS` | Comma-separated Discord user IDs allowed to authenticate (empty = all users allowed) |
 
 ## Deploy to Cloudflare
 
@@ -60,12 +61,13 @@ npx wrangler secret put DISCORD_CLIENT_ID
 npx wrangler secret put DISCORD_CLIENT_SECRET
 npx wrangler secret put DISCORD_BOT_TOKEN
 npx wrangler secret put COOKIE_ENCRYPTION_KEY
+npx wrangler secret put ALLOWED_DISCORD_USER_IDS
 
 # Deploy
 npm run deploy
 ```
 
-After deploying, add `https://<your-worker>.workers.dev/callback` as a redirect URI in the Discord Developer Portal.
+After deploying, Wrangler will print your worker URL (e.g. `https://guildbridge.<your-subdomain>.workers.dev`). Add `https://<your-worker-url>/callback` as a redirect URI in the Discord Developer Portal.
 
 ## Connect an MCP Client
 
