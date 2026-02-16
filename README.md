@@ -24,6 +24,8 @@ There is no official Discord MCP server, yet much of the coordination with contr
 >[!WARNING]
 >The actual hosted version of this MCP server is not broadly available (I have restricted it to specific accounts and servers), but you can just as easily configure and deploy it yourself on your Cloudflare account.
 
+![Querying data from the Discord MCP server with Claude](media/claude-mcp-discord.gif)
+
 >[!NOTE]
 >When hosted, this MCP server authenticates users via [Discord OAuth2](https://discord.com/developers/docs/topics/oauth2) and makes all API calls with a [bot token](https://discord.com/developers/docs/reference#authentication). Role-Based Access Control (RBAC) is implemented server-side, as Discord's own auth surface doesn't enable a clean role separation and integration with messaging APIs in its OAuth implementation.
 
