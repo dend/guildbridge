@@ -5,6 +5,7 @@ import { z } from "zod";
 import { DiscordHandler } from "./discord-handler";
 import {
 	listBotGuilds,
+	listUserGuilds,
 	listChannels,
 	getChannel,
 	readMessages,
@@ -24,8 +25,29 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 	async init() {
 		const botToken = this.env.DISCORD_BOT_TOKEN;
 
-		this.server.tool("list_guilds", "List Discord servers the bot is in", {}, async () => {
-			const guilds = await listBotGuilds(botToken);
+		if (!this.props?.accessToken) {
+			throw new Error("Not authenticated");
+		}
+		const userGuilds = await listUserGuilds(this.props.accessToken);
+		const userGuildIds = new Set(userGuilds.map((g) => g.id));
+
+		const assertGuildAccess = (guildId: string) => {
+			if (!userGuildIds.has(guildId)) {
+				throw new Error(`Access denied: you are not a member of guild ${guildId}`);
+			}
+		};
+
+		const assertChannelAccess = async (channelId: string) => {
+			const channel = await getChannel(botToken, channelId);
+			if (!channel.guild_id) {
+				throw new Error(`Channel ${channelId} is not in a guild`);
+			}
+			assertGuildAccess(channel.guild_id);
+		};
+
+		this.server.tool("list_guilds", "List Discord servers you are in", {}, async () => {
+			const botGuilds = await listBotGuilds(botToken);
+			const guilds = botGuilds.filter((g) => userGuildIds.has(g.id));
 			return {
 				content: [
 					{
@@ -53,6 +75,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					),
 			},
 			async ({ guild_id, type }) => {
+				assertGuildAccess(guild_id);
 				const channels = await listChannels(botToken, guild_id);
 				let filtered = channels;
 				if (type) {
@@ -94,6 +117,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 				channel_id: z.string().describe("The Discord channel ID"),
 			},
 			async ({ channel_id }) => {
+				await assertChannelAccess(channel_id);
 				const ch = await getChannel(botToken, channel_id);
 				return {
 					content: [
@@ -134,6 +158,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 				after: z.string().optional().describe("Get messages after this message ID"),
 			},
 			async ({ channel_id, limit, before, after }) => {
+				await assertChannelAccess(channel_id);
 				const messages = await readMessages(botToken, channel_id, {
 					limit: limit ?? 50,
 					before,
@@ -200,6 +225,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 				sort_order: z.string().optional().describe("Sort order ('asc' or 'desc')"),
 			},
 			async ({ guild_id, query, channel_id, author_id, limit, sort_by, sort_order }) => {
+				assertGuildAccess(guild_id);
 				const result = await searchMessages(botToken, guild_id, query, {
 					channelId: channel_id,
 					authorId: author_id,
@@ -249,6 +275,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					.describe("Message content (max 2000 characters)"),
 			},
 			async ({ channel_id, content }) => {
+				await assertChannelAccess(channel_id);
 				const msg = await sendMessage(botToken, channel_id, content);
 				return {
 					content: [
@@ -282,6 +309,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					.describe("Reply content (max 2000 characters)"),
 			},
 			async ({ channel_id, message_id, content }) => {
+				await assertChannelAccess(channel_id);
 				const msg = await replyToMessage(botToken, channel_id, message_id, content);
 				return {
 					content: [

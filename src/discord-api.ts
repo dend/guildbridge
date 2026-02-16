@@ -140,6 +140,16 @@ export async function listBotGuilds(token: string): Promise<DiscordGuild[]> {
 	return discordFetch<DiscordGuild[]>(token, "/users/@me/guilds");
 }
 
+export async function listUserGuilds(userAccessToken: string): Promise<DiscordGuild[]> {
+	const resp = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
+		headers: { Authorization: `Bearer ${userAccessToken}` },
+	});
+	if (!resp.ok) {
+		throw new DiscordApiError(resp.status, await resp.text());
+	}
+	return resp.json() as Promise<DiscordGuild[]>;
+}
+
 export async function getGuild(token: string, guildId: string): Promise<DiscordGuild> {
 	return discordFetch<DiscordGuild>(token, `/guilds/${guildId}?with_counts=true`);
 }
