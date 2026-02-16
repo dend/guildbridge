@@ -250,10 +250,10 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 									embeds: m.embeds.length > 0 ? m.embeds : undefined,
 									reply_to: m.referenced_message
 										? {
-												id: m.referenced_message.id,
-												author: m.referenced_message.author.username,
-												content: m.referenced_message.content.slice(0, 100),
-											}
+											id: m.referenced_message.id,
+											author: m.referenced_message.author.username,
+											content: m.referenced_message.content.slice(0, 100),
+										}
 										: undefined,
 								})),
 								null,

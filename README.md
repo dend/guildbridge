@@ -146,13 +146,6 @@ flowchart TD
 
 For `list_channels` and `search_messages`, the same [permission computation](https://discord.com/developers/docs/topics/permissions#permission-hierarchy) is applied as a post-filter — channels the user can't see are stripped from results.
 
-## Project Structure
+## Contributing
 
-```
-src/
-  index.ts               # MCP server (tools) + OAuthProvider export
-  discord-handler.ts     # Discord OAuth flow (Hono routes)
-  discord-api.ts         # Discord REST API helpers + types
-  utils.ts               # OAuth token exchange + Props type
-  workers-oauth-utils.ts # CSRF/session/state management
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style guidelines, and how to submit changes.

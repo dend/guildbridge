@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.2.3",
@@ -15,7 +17,10 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.0",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.56.0",
     "wrangler": "^4.14.4"
   }
 }
