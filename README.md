@@ -11,6 +11,8 @@
     ·
     <a href="#access-control">Access Control</a>
     ·
+    <a href="#token-usage">Token Usage</a>
+    ·
     <a href="CONTRIBUTING.md">Contributing</a>
   </p>
 </p>
@@ -166,6 +168,23 @@ flowchart TD
 ```
 
 For `list_channels` and `search_messages`, the same [permission computation](https://discord.com/developers/docs/topics/permissions#permission-hierarchy) is applied as a post-filter — channels the user can't see are stripped from results.
+
+## Token Usage
+
+GuildBridge uses two distinct Discord tokens with intentionally separate roles:
+
+| Token | Stored in | Used for |
+|---|---|---|
+| **Bot token** | Server-side env var (`DISCORD_BOT_TOKEN`) | All Discord API calls — reading messages, sending messages, fetching channels, roles, and members |
+| **User OAuth token** | Encrypted inside the MCP access token | Guild membership verification only (`/users/@me/guilds`) |
+
+The bot token never leaves the server. The user's Discord OAuth token is obtained during the [OAuth2 login flow](https://discord.com/developers/docs/topics/oauth2), embedded into an encrypted MCP access token, and returned to the MCP client. GuildBridge does not store the user's token server-side — the MCP client holds the encrypted token and sends it with each request, where it is decrypted to extract the OAuth token for guild membership checks.
+
+During the OAuth flow, short-lived session state is managed via:
+
+- **CSRF token** — HTTP-only cookie, validates the approval form submission (600s TTL)
+- **State token** — stored in [Cloudflare KV](https://developers.cloudflare.com/kv/), binds the OAuth request across redirects (600s TTL)
+- **Approved clients cookie** — HMAC-signed, lets returning users skip the approval dialog (30 days)
 
 ## Contributing
 
