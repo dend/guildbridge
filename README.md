@@ -18,8 +18,9 @@ Remote MCP server for Discord, deployed on Cloudflare Workers. Exposes Discord r
 4. Under **OAuth2 > Redirects**, add your callback URL:
    - Local dev: `http://localhost:8788/callback`
    - Production: `https://<your-worker>.workers.dev/callback`
-5. Under **Bot > Privileged Gateway Intents**, enable **Message Content Intent** if you want full message content in search results.
-6. Invite the bot to your server(s) using OAuth2 URL Generator with the `bot` scope and `Read Message History` + `Send Messages` permissions.
+5. Under **OAuth2 > Scopes**, ensure `identify` and `guilds` are selected.
+6. Under **Bot > Privileged Gateway Intents**, enable **Message Content Intent** if you want full message content in search results.
+7. Invite the bot to your server(s) using OAuth2 URL Generator with the `bot` scope and `Read Message History` + `Send Messages` permissions.
 
 ## Local Development
 
