@@ -1,26 +1,31 @@
 # GuildBridge
 
-Remote MCP server for Discord, deployed on Cloudflare Workers. Exposes Discord read/search/post operations as MCP tools. Uses Discord OAuth to authenticate users and a Discord bot token for API calls.
+A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Discord, deployed on [Cloudflare Workers](https://developers.cloudflare.com/workers/).
+
+Exposes Discord read/search/post operations as MCP tools.
+
+>[!NOTE]
+>When hosted, this MCP server authenticates users via [Discord OAuth2](https://discord.com/developers/docs/topics/oauth2) and makes all API calls with a [bot token](https://discord.com/developers/docs/reference#authentication). Role-Based Access Control (RBAC) is implemented server-side, as Discord's own auth surface doesn't enable a clean role separation and integration with messaging APIs in its OAuth implementation.
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
-- A [Cloudflare](https://dash.cloudflare.com/) account
-- A [Discord application](https://discord.com/developers/applications) with:
-  - A **bot** added to the servers you want to access
-  - **OAuth2** configured (client ID + secret)
+- A [Cloudflare account](https://dash.cloudflare.com/) (using the free tier is sufficient)
+- A [Discord application](https://discord.com/developers/docs/getting-started#creating-an-app) with:
+  - A [bot user](https://discord.com/developers/docs/topics/oauth2#bots) added to the servers you want to access
+  - [OAuth2](https://discord.com/developers/docs/topics/oauth2) configured (client ID + secret)
 
 ## Discord App Setup
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create (or select) an application.
-2. Under **Bot**, click "Reset Token" to get your bot token. Save it.
+2. Under **Bot**, click "Reset Token" to get your [bot token](https://discord.com/developers/docs/reference#authentication). Save it.
 3. Under **OAuth2**, note the **Client ID** and **Client Secret**.
 4. Under **OAuth2 > Redirects**, add your callback URL:
    - Local dev: `http://localhost:8788/callback`
-   - Production: `https://<your-worker>.workers.dev/callback`
-5. Under **OAuth2 > Scopes**, ensure `identify` and `guilds` are selected.
-6. Under **Bot > Privileged Gateway Intents**, enable **Message Content Intent** if you want full message content in search results.
-7. Invite the bot to your server(s) using OAuth2 URL Generator with the `bot` scope and these permissions: `View Channels`, `Read Message History`, `Send Messages`.
+   - Production: `https://<your-worker>.workers.dev/callback` (you will get this URI later when you deploy your MCP server to Cloudflare)
+5. Under **OAuth2 > Scopes**, ensure [`identify` and `guilds`](https://discord.com/developers/docs/topics/oauth2#shared-resources-oauth2-scopes) are selected.
+6. Under **Bot > Privileged Gateway Intents**, enable [**Message Content Intent**](https://discord.com/developers/docs/events/gateway#message-content-intent) if you want full message content in search results.
+7. Invite the bot to your server(s) using the OAuth2 URL Generator with the `bot` scope and these [permissions](https://discord.com/developers/docs/topics/permissions#permissions-bitwise-permission-flags): `View Channels`, `Read Message History`, `Send Messages`.
 
 ## Local Development
 
@@ -36,7 +41,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-The server runs at `http://localhost:8788`. The MCP endpoint is at `/mcp`.
+The server runs at `http://localhost:8788`. The [MCP endpoint](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) is at `/mcp`.
 
 ### `.dev.vars`
 
@@ -44,32 +49,32 @@ The server runs at `http://localhost:8788`. The MCP endpoint is at `/mcp`.
 |---|---|
 | `DISCORD_CLIENT_ID` | OAuth2 client ID from Discord Developer Portal |
 | `DISCORD_CLIENT_SECRET` | OAuth2 client secret |
-| `DISCORD_BOT_TOKEN` | Bot token (used for all Discord API calls) |
-| `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies — generate one with `openssl rand -hex 16` |
-| `ALLOWED_DISCORD_USER_IDS` | Comma-separated Discord user IDs allowed to authenticate (empty = all users allowed) |
+| `DISCORD_BOT_TOKEN` | [Bot token](https://discord.com/developers/docs/reference#authentication) (used for all Discord API calls) |
+| `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies — generate with `openssl rand -hex 16` |
+| `ALLOWED_DISCORD_USER_IDS` | Comma-separated [Discord user IDs](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID) allowed to authenticate (empty = all users) |
 
 ## Deploy to Cloudflare
 
 ```bash
-# Create the KV namespace
+# Create the KV namespace (https://developers.cloudflare.com/kv/)
 npx wrangler kv namespace create OAUTH_KV
 ```
 
 Copy the output `id` into `wrangler.jsonc` replacing `PLACEHOLDER_KV_ID`.
 
 ```bash
-# Set secrets (bulk upload from your .dev.vars file)
+# Set secrets (https://developers.cloudflare.com/workers/configuration/secrets/)
 npx wrangler secret bulk .dev.vars
 
 # Deploy
 npm run deploy
 ```
 
-After deploying, Wrangler will print your worker URL (e.g. `https://guildbridge.<your-subdomain>.workers.dev`). Add `https://<your-worker-url>/callback` as a redirect URI in the Discord Developer Portal.
+After deploying, [Wrangler](https://developers.cloudflare.com/workers/wrangler/) will print your worker URL (e.g. `https://guildbridge.<your-subdomain>.workers.dev`). Add `https://<your-worker-url>/callback` as a redirect URI in the Discord Developer Portal.
 
 ## Connect an MCP Client
 
-Point any MCP client at the server URL:
+Point any [MCP-compatible client](https://modelcontextprotocol.io/clients) at the server URL:
 
 ```
 https://<your-worker>.workers.dev/mcp
@@ -81,7 +86,7 @@ Or locally:
 http://localhost:8788/mcp
 ```
 
-To test with the MCP Inspector:
+To test with the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
 
 ```bash
 npx @modelcontextprotocol/inspector@latest
@@ -103,7 +108,7 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 
 ## Access Control
 
-Every tool call goes through a layered access check before touching the Discord API. Guild membership is verified via the user's OAuth token, and channel visibility is enforced by computing Discord's effective permissions from the bot's perspective.
+Every tool call goes through a layered access check before touching the Discord API. Guild membership is verified via the user's OAuth token, and channel visibility is enforced by computing [Discord's permission algorithm](https://discord.com/developers/docs/topics/permissions#permission-overwrites) from the bot's perspective.
 
 ```mermaid
 flowchart TD
@@ -139,7 +144,7 @@ flowchart TD
     U -->|No| G
 ```
 
-For `list_channels` and `search_messages`, the same permission computation is applied as a post-filter — channels the user can't see are stripped from results.
+For `list_channels` and `search_messages`, the same [permission computation](https://discord.com/developers/docs/topics/permissions#permission-hierarchy) is applied as a post-filter — channels the user can't see are stripped from results.
 
 ## Project Structure
 
