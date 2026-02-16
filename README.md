@@ -101,6 +101,46 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 | `send_message` | Send a message to a channel |
 | `reply_to_message` | Reply to a specific message |
 
+## Access Control
+
+Every tool call goes through a layered access check before touching the Discord API. Guild membership is verified via the user's OAuth token, and channel visibility is enforced by computing Discord's effective permissions from the bot's perspective.
+
+```mermaid
+flowchart TD
+    A[Tool call] --> B{Channel or guild scoped?}
+
+    B -->|Guild scoped| C[assertGuildAccess]
+    B -->|Channel scoped| D[assertChannelAccess]
+
+    C --> E[Fetch user guilds via OAuth token]
+    E --> F{User is member?}
+    F -->|No| G[Access denied]
+
+    D --> H[Fetch channel info via bot token]
+    H --> I{Channel in a guild?}
+    I -->|No| G
+    I -->|Yes| C
+
+    F -->|Yes| J[getGuildPermContext]
+    J --> K[Fetch guild roles + member roles + guild info]
+    K --> L{User is guild owner?}
+    L -->|Yes| M[Access granted]
+    L -->|No| N[computePermissions]
+
+    N --> O[Base: @everyone role perms]
+    O --> P[OR in member role perms]
+    P --> Q{ADMINISTRATOR set?}
+    Q -->|Yes| M
+    Q -->|No| R[Apply @everyone channel overwrite]
+    R --> S[Apply matching role channel overwrites]
+    S --> T[Apply member-specific channel overwrite]
+    T --> U{VIEW_CHANNEL set?}
+    U -->|Yes| M
+    U -->|No| G
+```
+
+For `list_channels` and `search_messages`, the same permission computation is applied as a post-filter — channels the user can't see are stripped from results.
+
 ## Project Structure
 
 ```

@@ -12,6 +12,11 @@ import {
 	sendMessage,
 	replyToMessage,
 	searchMessages,
+	getGuildMember,
+	getGuildRoles,
+	getGuild,
+	computePermissions,
+	VIEW_CHANNEL,
 	CHANNEL_TYPE_NAMES,
 } from "./discord-api";
 import type { Props } from "./utils";
@@ -29,6 +34,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			throw new Error("Not authenticated");
 		}
 		const accessToken = this.props.accessToken;
+		const userId = this.props.userId;
 
 		let cachedGuildIds: Set<string> | null = null;
 		let cachedAt = 0;
@@ -50,12 +56,45 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			}
 		};
 
+		const guildPermCache = new Map<string, {
+			roles: import("./discord-api").DiscordRole[];
+			memberRoleIds: string[];
+			ownerId: string;
+			cachedAt: number;
+		}>();
+
+		const getGuildPermContext = async (guildId: string) => {
+			const cached = guildPermCache.get(guildId);
+			if (cached && Date.now() - cached.cachedAt < 60_000) return cached;
+
+			const [roles, member, guild] = await Promise.all([
+				getGuildRoles(botToken, guildId),
+				getGuildMember(botToken, guildId, userId),
+				getGuild(botToken, guildId),
+			]);
+
+			const ctx = { roles, memberRoleIds: member.roles, ownerId: guild.owner_id ?? "", cachedAt: Date.now() };
+			guildPermCache.set(guildId, ctx);
+			return ctx;
+		};
+
 		const assertChannelAccess = async (channelId: string) => {
 			const channel = await getChannel(botToken, channelId);
 			if (!channel.guild_id) {
 				throw new Error(`Channel ${channelId} is not in a guild`);
 			}
 			await assertGuildAccess(channel.guild_id);
+
+			const { roles, memberRoleIds, ownerId } = await getGuildPermContext(channel.guild_id);
+			if (ownerId === userId) return;
+
+			const perms = computePermissions(
+				channel.guild_id, userId, memberRoleIds, roles,
+				channel.permission_overwrites ?? [],
+			);
+			if (!(perms & VIEW_CHANNEL)) {
+				throw new Error(`Access denied: you do not have access to channel ${channelId}`);
+			}
 		};
 
 		this.server.tool("list_guilds", "List Discord servers you are in", {}, async () => {
@@ -91,14 +130,23 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			async ({ guild_id, type }) => {
 				await assertGuildAccess(guild_id);
 				const channels = await listChannels(botToken, guild_id);
+
+				const { roles, memberRoleIds, ownerId } = await getGuildPermContext(guild_id);
 				let filtered = channels;
+				if (ownerId !== userId) {
+					filtered = channels.filter((ch) => {
+						const perms = computePermissions(guild_id, userId, memberRoleIds, roles, ch.permission_overwrites ?? []);
+						return Boolean(perms & VIEW_CHANNEL);
+					});
+				}
+
 				if (type) {
 					const typeEntry = Object.entries(CHANNEL_TYPE_NAMES).find(
 						([, name]) => name === type.toLowerCase(),
 					);
 					if (typeEntry) {
 						const typeNum = parseInt(typeEntry[0]);
-						filtered = channels.filter((ch) => ch.type === typeNum);
+						filtered = filtered.filter((ch) => ch.type === typeNum);
 					}
 				}
 
@@ -247,6 +295,23 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					sortBy: sort_by,
 					sortOrder: sort_order,
 				});
+
+				const { roles, memberRoleIds, ownerId } = await getGuildPermContext(guild_id);
+				if (ownerId !== userId) {
+					const uniqueChannelIds = [...new Set(result.messages.map((g) => g[0]?.channel_id).filter(Boolean))] as string[];
+					const channelInfos = await Promise.all(uniqueChannelIds.map((id) => getChannel(botToken, id)));
+					const visibleChannels = new Set(
+						channelInfos
+							.filter((ch) => {
+								const perms = computePermissions(guild_id, userId, memberRoleIds, roles, ch.permission_overwrites ?? []);
+								return Boolean(perms & VIEW_CHANNEL);
+							})
+							.map((ch) => ch.id),
+					);
+					result.messages = result.messages.filter((group) => visibleChannels.has(group[0]?.channel_id));
+					result.total_results = result.messages.length;
+				}
+
 				return {
 					content: [
 						{

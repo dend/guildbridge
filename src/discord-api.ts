@@ -10,6 +10,23 @@ export interface DiscordGuild {
 	member_count?: number;
 }
 
+export interface DiscordRole {
+	id: string;
+	name: string;
+	permissions: string; // bigint as string
+}
+
+export interface DiscordPermissionOverwrite {
+	id: string; // role or user ID
+	type: number; // 0 = role, 1 = member
+	allow: string; // bigint as string
+	deny: string; // bigint as string
+}
+
+export interface DiscordGuildMember {
+	roles: string[]; // array of role IDs
+}
+
 export interface DiscordChannel {
 	id: string;
 	guild_id?: string;
@@ -19,6 +36,7 @@ export interface DiscordChannel {
 	position?: number;
 	parent_id?: string | null;
 	nsfw?: boolean;
+	permission_overwrites?: DiscordPermissionOverwrite[];
 }
 
 export interface DiscordUser {
@@ -202,6 +220,76 @@ export async function replyToMessage(
 			message_reference: { message_id: messageId },
 		}),
 	});
+}
+
+export async function getGuildMember(
+	token: string,
+	guildId: string,
+	userId: string,
+): Promise<DiscordGuildMember> {
+	return discordFetch<DiscordGuildMember>(token, `/guilds/${guildId}/members/${userId}`);
+}
+
+export async function getGuildRoles(token: string, guildId: string): Promise<DiscordRole[]> {
+	return discordFetch<DiscordRole[]>(token, `/guilds/${guildId}/roles`);
+}
+
+export const VIEW_CHANNEL = 1n << 10n;
+const ADMINISTRATOR = 1n << 3n;
+
+export function computePermissions(
+	guildId: string,
+	memberId: string,
+	memberRoleIds: string[],
+	roles: DiscordRole[],
+	overwrites: DiscordPermissionOverwrite[],
+): bigint {
+	const roleMap = new Map(roles.map((r) => [r.id, r]));
+
+	// 1. Base = @everyone role permissions (role ID == guild ID)
+	const everyoneRole = roleMap.get(guildId);
+	let permissions = everyoneRole ? BigInt(everyoneRole.permissions) : 0n;
+
+	// 2. OR in permissions for each of the member's roles
+	for (const roleId of memberRoleIds) {
+		const role = roleMap.get(roleId);
+		if (role) {
+			permissions |= BigInt(role.permissions);
+		}
+	}
+
+	// 3. If ADMINISTRATOR bit set, return all permissions
+	if (permissions & ADMINISTRATOR) {
+		return ~0n;
+	}
+
+	// 4. Apply channel @everyone overwrite (deny then allow)
+	const everyoneOverwrite = overwrites.find((o) => o.id === guildId);
+	if (everyoneOverwrite) {
+		permissions &= ~BigInt(everyoneOverwrite.deny);
+		permissions |= BigInt(everyoneOverwrite.allow);
+	}
+
+	// 5. OR together all role overwrites matching member's roles (deny then allow)
+	let roleDeny = 0n;
+	let roleAllow = 0n;
+	for (const overwrite of overwrites) {
+		if (overwrite.type === 0 && overwrite.id !== guildId && memberRoleIds.includes(overwrite.id)) {
+			roleDeny |= BigInt(overwrite.deny);
+			roleAllow |= BigInt(overwrite.allow);
+		}
+	}
+	permissions &= ~roleDeny;
+	permissions |= roleAllow;
+
+	// 6. Apply member-specific overwrite (deny then allow)
+	const memberOverwrite = overwrites.find((o) => o.type === 1 && o.id === memberId);
+	if (memberOverwrite) {
+		permissions &= ~BigInt(memberOverwrite.deny);
+		permissions |= BigInt(memberOverwrite.allow);
+	}
+
+	return permissions;
 }
 
 export async function searchMessages(
