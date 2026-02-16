@@ -15,7 +15,7 @@ import {
 } from "./discord-api";
 import type { Props } from "./utils";
 
-export class GuildbridgeMCP extends McpAgent<Env, Record<string, never>, Props> {
+export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> {
 	server = new McpServer({
 		name: "Guildbridge",
 		version: "1.0.0",
@@ -307,7 +307,7 @@ export class GuildbridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 }
 
 export default new OAuthProvider({
-	apiHandler: GuildbridgeMCP.serve("/mcp"),
+	apiHandler: GuildBridgeMCP.serve("/mcp"),
 	apiRoute: "/mcp",
 	authorizeEndpoint: "/authorize",
 	tokenEndpoint: "/token",

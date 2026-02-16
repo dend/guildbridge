@@ -1,0 +1,36 @@
+{
+	"name": "guildbridge",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MCP_OBJECT",
+				"class_name": "GuildBridgeMCP"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_classes": [
+				"GuildBridgeMCP"
+			]
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_KV",
+			"id": "PLACEHOLDER_KV_ID"
+		}
+	]
+	// Secrets (set via `wrangler secret put`):
+	// - DISCORD_CLIENT_ID
+	// - DISCORD_CLIENT_SECRET
+	// - DISCORD_BOT_TOKEN
+	// - COOKIE_ENCRYPTION_KEY
+	// - ALLOWED_DISCORD_USER_IDS
+}

@@ -70,7 +70,8 @@ web_modules/
 .env.*
 !.env.example
 
-# Wrangler local secrets
+# Wrangler config and local secrets
+wrangler.jsonc
 .dev.vars
 
 # parcel-bundler cache (https://parceljs.org/)

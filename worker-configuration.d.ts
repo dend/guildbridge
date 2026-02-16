@@ -4,11 +4,11 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "GuildbridgeMCP";
+		durableNamespaces: "GuildBridgeMCP";
 	}
 	interface Env {
 		OAUTH_KV: KVNamespace;
-		MCP_OBJECT: DurableObjectNamespace<import("./src/index").GuildbridgeMCP>;
+		MCP_OBJECT: DurableObjectNamespace<import("./src/index").GuildBridgeMCP>;
 		DISCORD_CLIENT_ID: string;
 		DISCORD_CLIENT_SECRET: string;
 		DISCORD_BOT_TOKEN: string;

@@ -27,7 +27,8 @@ Remote MCP server for Discord, deployed on Cloudflare Workers. Exposes Discord r
 # Install dependencies
 npm install
 
-# Copy the example env file and fill in your values
+# Copy the example files and fill in your values
+cp wrangler.jsonc.example wrangler.jsonc
 cp .dev.vars.example .dev.vars
 
 # Start the dev server
