@@ -14,6 +14,9 @@ declare namespace Cloudflare {
 		DISCORD_BOT_TOKEN: string;
 		COOKIE_ENCRYPTION_KEY: string;
 		ALLOWED_DISCORD_USER_IDS: string;
+		CF_ACCESS_TEAM_DOMAIN: string;
+		CF_ACCESS_AUD: string;
+		DEV_SKIP_CF_ACCESS: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

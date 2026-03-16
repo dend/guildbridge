@@ -222,6 +222,10 @@ export async function replyToMessage(
 	});
 }
 
+export async function getUser(token: string, userId: string): Promise<DiscordUser> {
+	return discordFetch<DiscordUser>(token, `/users/${userId}`);
+}
+
 export async function getGuildMember(
 	token: string,
 	guildId: string,

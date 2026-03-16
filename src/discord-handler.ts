@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl, type Props } from "./utils";
+import { adminApp } from "./admin";
 import {
 	addApprovedClient,
 	bindStateToSession,
@@ -15,6 +16,8 @@ import {
 } from "./workers-oauth-utils";
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
+
+app.route("/admin", adminApp);
 
 app.get("/.well-known/oauth-protected-resource*", (c) => {
 	const origin = new URL(c.req.url).origin;
@@ -158,13 +161,16 @@ app.get("/callback", async (c) => {
 		avatar: string | null;
 	};
 
-	// Check allowlist
-	const allowedUsers = (env.ALLOWED_DISCORD_USER_IDS || "")
+	// Check allowlist (union of KV + env secret)
+	const kvRaw = await env.OAUTH_KV.get("admin:allowlist");
+	const kvAllowed: string[] = kvRaw ? JSON.parse(kvRaw) : [];
+	const envAllowed = (env.ALLOWED_DISCORD_USER_IDS || "")
 		.split(",")
 		.map((id) => id.trim())
 		.filter(Boolean);
+	const allowedUsers = new Set([...kvAllowed, ...envAllowed]);
 
-	if (allowedUsers.length > 0 && !allowedUsers.includes(user.id)) {
+	if (allowedUsers.size > 0 && !allowedUsers.has(user.id)) {
 		return c.text(`Access denied: user ${user.username} (${user.id}) is not authorized`, 403);
 	}
 
