@@ -47,6 +47,9 @@ The server runs at `http://localhost:8788`. The MCP endpoint is at `/mcp`.
 | `DISCORD_BOT_TOKEN` | Bot token (used for all Discord API calls) |
 | `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies — generate one with `openssl rand -hex 16` |
 | `ALLOWED_DISCORD_USER_IDS` | Comma-separated Discord user IDs allowed to authenticate (empty = all users allowed) |
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team name — required for the admin panel |
+| `CF_ACCESS_AUD` | Cloudflare Access Application Audience (AUD) tag — required for the admin panel |
+| `DEV_SKIP_CF_ACCESS` | Set to `true` to bypass CF Access JWT validation in local dev |
 
 ## Deploy to Cloudflare
 
@@ -101,6 +104,26 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 | `send_message` | Send a message to a channel |
 | `reply_to_message` | Reply to a specific message |
 
+## Admin Panel
+
+The admin panel at `/admin` lets you add and remove allowed Discord users at runtime, without redeploying. It stores the allowlist in KV and the OAuth callback checks both the KV allowlist and the `ALLOWED_DISCORD_USER_IDS` env secret (union of both).
+
+### Setup
+
+1. In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/), create an **Access Application** for `<your-worker-domain>/admin*`.
+2. Configure an identity provider (email OTP, Google, etc.).
+3. Copy the **Application Audience (AUD)** tag and set it as the `CF_ACCESS_AUD` secret.
+4. Set the `CF_ACCESS_TEAM_DOMAIN` secret to your Zero Trust team name.
+
+Once deployed, visit `https://<your-worker>.workers.dev/admin` to manage the allowlist.
+
+For local development, set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass CF Access JWT validation, then visit `http://localhost:8788/admin`.
+
+### Migration from env secret
+
+1. Both KV and `ALLOWED_DISCORD_USER_IDS` are checked (union). The admin panel manages KV only.
+2. Once all users are added via the panel, run `npx wrangler secret delete ALLOWED_DISCORD_USER_IDS` to remove the env secret.
+
 ## Access Control
 
 Every tool call goes through a layered access check before touching the Discord API. Guild membership is verified via the user's OAuth token, and channel visibility is enforced by computing Discord's effective permissions from the bot's perspective.
@@ -150,4 +173,6 @@ src/
   discord-api.ts         # Discord REST API helpers + types
   utils.ts               # OAuth token exchange + Props type
   workers-oauth-utils.ts # CSRF/session/state management
+  admin.ts               # Admin panel UI + API (user allowlist management)
+  cf-access.ts           # Cloudflare Access JWT validation middleware
 ```
