@@ -17,6 +17,8 @@ GuildBridge is a remote MCP server deployed on Cloudflare Workers. It exposes Di
 - **`src/discord-handler.ts`** — Discord OAuth flow (Hono routes)
 - **`src/utils.ts`** — OAuth token exchange helpers, `Props` type (user identity stored in auth token)
 - **`src/workers-oauth-utils.ts`** — CSRF/session/state management
+- **`src/cf-access.ts`** — Cloudflare Access JWT validation middleware
+- **`src/admin.ts`** — Admin panel UI + API for managing user allowlist via KV
 
 ## Key Design Decisions
 
@@ -39,6 +41,18 @@ Guild owners bypass permission checks entirely.
 - **Guild membership** (`getUserGuildIds`): 60s TTL, keyed per MCP session
 - **Permission context** (`getGuildPermContext`): 60s TTL, keyed by guild ID per session
 - Caches are in-memory Maps scoped to the `init()` closure, so they're per-session
+
+### User allowlist (admin panel)
+User access is controlled by an allowlist. The OAuth callback checks both sources (union):
+1. **KV** (`admin:allowlist` key in `OAUTH_KV`) — managed at runtime via the `/admin` panel
+2. **Env secret** (`ALLOWED_DISCORD_USER_IDS`) — comma-separated, set via `wrangler secret put`
+
+The admin panel (`/admin`) is a Hono sub-app mounted in `discord-handler.ts`. It is protected by Cloudflare Access (Zero Trust) externally, with defense-in-depth JWT validation in `cf-access.ts`. KV keys use the `admin:` prefix (`admin:allowlist` for the ID array, `admin:user:{id}` for per-user metadata).
+
+**Required setup for the admin panel:**
+- Create a CF Access Application in Zero Trust dashboard for `<domain>/admin*`
+- Set secrets: `CF_ACCESS_TEAM_DOMAIN` (team name), `CF_ACCESS_AUD` (Application Audience tag)
+- For local dev: set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass JWT validation
 
 ### Search result filtering
 Search results don't include `permission_overwrites`, so we fetch channel info for each unique `channel_id` in the results (in parallel) and filter out messages from non-visible channels.
