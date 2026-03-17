@@ -53,12 +53,51 @@ The server runs at `http://localhost:8788`. The MCP endpoint is at `/mcp`.
 
 ## Deploy to Cloudflare
 
+The Worker binds to three stateful Cloudflare resources: a **KV namespace** (OAuth state + allowlist), a **D1 database** (audit log), and a **Zero Trust Access application** (gates `/admin`). You can provision all three at once with Terraform, or create them individually with the wrangler CLI.
+
+### Option A — Terraform
+
+Provisions KV, D1, and the Access app + policy in one shot. Requires a Cloudflare API token with `Workers KV Storage:Edit`, `D1:Edit`, and `Access: Apps and Policies:Edit` scopes.
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars — set account ID, worker hostname, admin emails
+
+export CLOUDFLARE_API_TOKEN=...
+terraform init
+terraform apply
+```
+
+Wire the outputs into your config:
+
+| Output | Goes into |
+|---|---|
+| `kv_namespace_id` | `wrangler.jsonc` → `kv_namespaces[0].id` |
+| `d1_database_id` | `wrangler.jsonc` → `d1_databases[0].database_id` |
+| `d1_database_name` | `wrangler.jsonc` → `d1_databases[0].database_name` |
+| `cf_access_aud` | `wrangler secret put CF_ACCESS_AUD` |
+
+Then apply the D1 schema, set the remaining secrets, and deploy:
+
+```bash
+cd ..
+npx wrangler d1 migrations apply "$(terraform -chdir=terraform output -raw d1_database_name)" --remote
+npx wrangler secret bulk .dev.vars
+terraform -chdir=terraform output -raw cf_access_aud | npx wrangler secret put CF_ACCESS_AUD
+npm run deploy
+```
+
+If you used Terraform, skip the **Setup** subsections under [Admin Panel](#admin-panel) and [Observability](#observability) — those resources already exist.
+
+### Option B — Manual (wrangler CLI)
+
 ```bash
 # Create the KV namespace
 npx wrangler kv namespace create OAUTH_KV
 ```
 
-Copy the output `id` into `wrangler.jsonc` replacing `PLACEHOLDER_KV_ID`.
+Copy the output `id` into `wrangler.jsonc` replacing `PLACEHOLDER_KV_ID`. (D1 and Access setup are covered under [Observability](#observability) and [Admin Panel](#admin-panel) below.)
 
 ```bash
 # Set secrets (bulk upload from your .dev.vars file)
@@ -67,6 +106,8 @@ npx wrangler secret bulk .dev.vars
 # Deploy
 npm run deploy
 ```
+
+---
 
 After deploying, Wrangler will print your worker URL (e.g. `https://guildbridge.<your-subdomain>.workers.dev`). Add `https://<your-worker-url>/callback` as a redirect URI in the Discord Developer Portal.
 
@@ -226,4 +267,8 @@ src/
   audit.ts               # Tool-call audit: D1 + Analytics Engine writes
 migrations/
   0001_create_audit_log.sql  # D1 schema for the audit trail
+terraform/
+  main.tf                    # KV + D1 + Zero Trust Access app/policy
+  variables.tf               # account ID, worker hostname, admin emails
+  outputs.tf                 # IDs for wrangler.jsonc, AUD for secret
 ```
