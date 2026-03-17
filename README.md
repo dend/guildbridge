@@ -124,6 +124,54 @@ For local development, set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass CF
 1. Both KV and `ALLOWED_DISCORD_USER_IDS` are checked (union). The admin panel manages KV only.
 2. Once all users are added via the panel, run `npx wrangler secret delete ALLOWED_DISCORD_USER_IDS` to remove the env secret.
 
+## Observability
+
+Every MCP tool invocation is audited. Events are dual-written to **D1** (ordered audit trail, queryable from the admin panel's Activity tab) and **Analytics Engine** (fire-and-forget metrics, queried via the Cloudflare dashboard SQL API).
+
+**Captured per event:** timestamp, tool name, Discord user ID + username, outcome (ok/error), duration, `guild_id` (when present), `channel_id` (when present), created `message_id` (for `send_message`/`reply_to_message`), error message (on failure). Message content and search queries are never captured.
+
+### Setup
+
+```bash
+# Create the D1 database (one-time)
+npx wrangler d1 create guildbridge-audit
+```
+
+Copy the output `database_id` into `wrangler.jsonc` replacing `PLACEHOLDER_D1_ID`, then apply the schema:
+
+```bash
+# Local dev
+npx wrangler d1 migrations apply guildbridge-audit --local
+
+# Production
+npx wrangler d1 migrations apply guildbridge-audit --remote
+```
+
+Analytics Engine requires no setup — the `TOOL_AUDIT` binding in `wrangler.jsonc` is enough. In local dev, `writeDataPoint` is a no-op stub; it only writes when deployed.
+
+### Querying
+
+**Admin panel:** `https://<your-worker>.workers.dev/admin` → Activity tab. Filter by tool or user ID.
+
+**D1 directly:**
+
+```bash
+npx wrangler d1 execute guildbridge-audit --command \
+  "SELECT * FROM audit_log ORDER BY ts DESC LIMIT 20"
+```
+
+**Analytics Engine** (aggregates):
+
+```bash
+npx wrangler analytics-engine sql \
+  "SELECT blob1 AS tool, count() AS calls, avg(double1) AS avg_ms
+   FROM guildbridge_tool_calls
+   WHERE timestamp > now() - INTERVAL '7' DAY
+   GROUP BY tool"
+```
+
+Field mapping: `indexes[0]` = userId, `blobs` = `[tool, username, outcome, guildId, channelId, messageId, error]`, `doubles` = `[durationMs]`.
+
 ## Access Control
 
 Every tool call goes through a layered access check before touching the Discord API. Guild membership is verified via the user's OAuth token, and channel visibility is enforced by computing Discord's effective permissions from the bot's perspective.
@@ -173,6 +221,9 @@ src/
   discord-api.ts         # Discord REST API helpers + types
   utils.ts               # OAuth token exchange + Props type
   workers-oauth-utils.ts # CSRF/session/state management
-  admin.ts               # Admin panel UI + API (user allowlist management)
+  admin.ts               # Admin panel UI + API (allowlist + activity log)
   cf-access.ts           # Cloudflare Access JWT validation middleware
+  audit.ts               # Tool-call audit: D1 + Analytics Engine writes
+migrations/
+  0001_create_audit_log.sql  # D1 schema for the audit trail
 ```

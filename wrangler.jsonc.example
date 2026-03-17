@@ -26,6 +26,19 @@
 			"binding": "OAUTH_KV",
 			"id": "PLACEHOLDER_KV_ID"
 		}
+	],
+	"d1_databases": [
+		{
+			"binding": "AUDIT_DB",
+			"database_name": "guildbridge-audit",
+			"database_id": "PLACEHOLDER_D1_ID"
+		}
+	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "TOOL_AUDIT",
+			"dataset": "guildbridge_tool_calls"
+		}
 	]
 	// Secrets (set via `wrangler secret put`):
 	// - DISCORD_CLIENT_ID

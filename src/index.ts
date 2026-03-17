@@ -20,6 +20,8 @@ import {
 	CHANNEL_TYPE_NAMES,
 } from "./discord-api";
 import type { Props } from "./utils";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { recordAudit, extractResourceIds, type AuditContext } from "./audit";
 
 export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> {
 	server = new McpServer({
@@ -35,6 +37,52 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		}
 		const accessToken = this.props.accessToken;
 		const userId = this.props.userId;
+		const username = this.props.username;
+		const env = this.env;
+		const waitUntil = this.ctx.waitUntil.bind(this.ctx);
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		type ToolHandler<A> = (args: A, audit: AuditContext) => Promise<CallToolResult>;
+		const tool = <Args extends z.ZodRawShape>(
+			name: string,
+			description: string,
+			schema: Args,
+			handler: ToolHandler<z.output<z.ZodObject<Args>>>,
+		) => {
+			// The SDK's ZodRawShapeCompat unions zod v3 and v4 types and TS can't
+			// unify the generic through both layers. Schema and args pass through
+			// unchanged; call-site typing is enforced by the handler param above.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			this.server.tool(name, description, schema as any, async (args: any) => {
+				const start = Date.now();
+				const auditCtx: AuditContext = {};
+				const ids = extractResourceIds(args);
+				try {
+					const result = await handler(args, auditCtx);
+					recordAudit(env, waitUntil, {
+						tool: name,
+						userId,
+						username,
+						outcome: "ok",
+						durationMs: Date.now() - start,
+						...ids,
+						messageId: auditCtx.messageId,
+					});
+					return result;
+				} catch (err) {
+					recordAudit(env, waitUntil, {
+						tool: name,
+						userId,
+						username,
+						outcome: "error",
+						durationMs: Date.now() - start,
+						...ids,
+						error: err instanceof Error ? err.message : String(err),
+					});
+					throw err;
+				}
+			});
+		};
 
 		let cachedGuildIds: Set<string> | null = null;
 		let cachedAt = 0;
@@ -97,7 +145,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			}
 		};
 
-		this.server.tool("list_guilds", "List Discord servers you are in", {}, async () => {
+		tool("list_guilds", "List Discord servers you are in", {}, async () => {
 			const userGuildIds = await getUserGuildIds();
 			const botGuilds = await listBotGuilds(botToken);
 			const guilds = botGuilds.filter((g) => userGuildIds.has(g.id));
@@ -115,7 +163,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			};
 		});
 
-		this.server.tool(
+		tool(
 			"list_channels",
 			"List channels in a Discord server, optionally filtered by type",
 			{
@@ -172,7 +220,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 		);
 
-		this.server.tool(
+		tool(
 			"get_channel_info",
 			"Get details about a specific Discord channel",
 			{
@@ -204,7 +252,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 		);
 
-		this.server.tool(
+		tool(
 			"read_messages",
 			"Read messages from a Discord channel",
 			{
@@ -265,7 +313,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 		);
 
-		this.server.tool(
+		tool(
 			"search_messages",
 			"Search messages in a Discord server",
 			{
@@ -343,7 +391,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 		);
 
-		this.server.tool(
+		tool(
 			"send_message",
 			"Send a message to a Discord channel",
 			{
@@ -353,9 +401,10 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					.max(2000)
 					.describe("Message content (max 2000 characters)"),
 			},
-			async ({ channel_id, content }) => {
+			async ({ channel_id, content }, audit) => {
 				await assertChannelAccess(channel_id);
 				const msg = await sendMessage(botToken, channel_id, content);
+				audit.messageId = msg.id;
 				return {
 					content: [
 						{
@@ -376,7 +425,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 		);
 
-		this.server.tool(
+		tool(
 			"reply_to_message",
 			"Reply to a specific message in a Discord channel",
 			{
@@ -387,9 +436,10 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 					.max(2000)
 					.describe("Reply content (max 2000 characters)"),
 			},
-			async ({ channel_id, message_id, content }) => {
+			async ({ channel_id, message_id, content }, audit) => {
 				await assertChannelAccess(channel_id);
 				const msg = await replyToMessage(botToken, channel_id, message_id, content);
+				audit.messageId = msg.id;
 				return {
 					content: [
 						{

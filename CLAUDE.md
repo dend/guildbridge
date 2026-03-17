@@ -18,7 +18,8 @@ GuildBridge is a remote MCP server deployed on Cloudflare Workers. It exposes Di
 - **`src/utils.ts`** — OAuth token exchange helpers, `Props` type (user identity stored in auth token)
 - **`src/workers-oauth-utils.ts`** — CSRF/session/state management
 - **`src/cf-access.ts`** — Cloudflare Access JWT validation middleware
-- **`src/admin.ts`** — Admin panel UI + API for managing user allowlist via KV
+- **`src/admin.ts`** — Admin panel UI + API: Allowlist tab (KV), Activity tab (D1 audit log)
+- **`src/audit.ts`** — Tool-call audit: dual-write to D1 + Analytics Engine
 
 ## Key Design Decisions
 
@@ -53,6 +54,11 @@ The admin panel (`/admin`) is a Hono sub-app mounted in `discord-handler.ts`. It
 - Create a CF Access Application in Zero Trust dashboard for `<domain>/admin*`
 - Set secrets: `CF_ACCESS_TEAM_DOMAIN` (team name), `CF_ACCESS_AUD` (Application Audience tag)
 - For local dev: set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass JWT validation
+
+### Tool-call auditing
+Every tool invocation flows through the `tool()` wrapper in `index.ts` (defined at the top of `init()`). The wrapper times the call, passes an `AuditContext` bag the handler can write into (used by `send_message`/`reply_to_message` to surface the created `message_id`), and calls `recordAudit()` on both success and error paths. The D1 write is wrapped in `this.ctx.waitUntil()` so it never blocks the tool response; the Analytics Engine write is synchronous fire-and-forget.
+
+Analytics Engine is positional: `indexes[0]` = userId, `blobs` = `[tool, username, outcome, guildId, channelId, messageId, error]`, `doubles` = `[durationMs]`. In local dev the AE binding is a no-op stub — only D1 writes land locally.
 
 ### Search result filtering
 Search results don't include `permission_overwrites`, so we fetch channel info for each unique `channel_id` in the results (in parallel) and filter out messages from non-visible channels.

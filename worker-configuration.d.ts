@@ -17,6 +17,8 @@ declare namespace Cloudflare {
 		CF_ACCESS_TEAM_DOMAIN: string;
 		CF_ACCESS_AUD: string;
 		DEV_SKIP_CF_ACCESS: string;
+		AUDIT_DB: D1Database;
+		TOOL_AUDIT: AnalyticsEngineDataset;
 	}
 }
 interface Env extends Cloudflare.Env {}
