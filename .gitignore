@@ -73,6 +73,7 @@ web_modules/
 # Wrangler config and local secrets
 wrangler.jsonc
 .dev.vars
+.wrangler/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
