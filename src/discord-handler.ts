@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl, type Props } from "./utils";
-import { adminApp } from "./admin";
+import { adminApp, isUserAllowed } from "./admin";
 import {
 	addApprovedClient,
 	bindStateToSession,
@@ -161,16 +161,7 @@ app.get("/callback", async (c) => {
 		avatar: string | null;
 	};
 
-	// Check allowlist (union of KV + env secret)
-	const kvRaw = await env.OAUTH_KV.get("admin:allowlist");
-	const kvAllowed: string[] = kvRaw ? JSON.parse(kvRaw) : [];
-	const envAllowed = (env.ALLOWED_DISCORD_USER_IDS || "")
-		.split(",")
-		.map((id) => id.trim())
-		.filter(Boolean);
-	const allowedUsers = new Set([...kvAllowed, ...envAllowed]);
-
-	if (allowedUsers.size > 0 && !allowedUsers.has(user.id)) {
+	if (!(await isUserAllowed(env.OAUTH_KV, user.id))) {
 		return c.text(`Access denied: user ${user.username} (${user.id}) is not authorized`, 403);
 	}
 

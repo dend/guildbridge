@@ -12,6 +12,20 @@ interface AdminUser {
 	added_by: string;
 }
 
+const ALLOWLIST_KEY = "admin:allowlist";
+
+async function getAllowlist(kv: KVNamespace): Promise<string[]> {
+	const raw = await kv.get(ALLOWLIST_KEY);
+	return raw ? JSON.parse(raw) : [];
+}
+
+// Single source of truth for the OAuth callback's user gate.
+// Empty allowlist = no restriction (fail-open for initial setup).
+export async function isUserAllowed(kv: KVNamespace, userId: string): Promise<boolean> {
+	const ids = await getAllowlist(kv);
+	return ids.length === 0 || ids.includes(userId);
+}
+
 const app = new Hono<{
 	Bindings: Env;
 	Variables: { cfAccessEmail: string };
@@ -464,8 +478,7 @@ app.get("/", (c) => {
 });
 
 app.get("/api/users", async (c) => {
-	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids = await getAllowlist(c.env.OAUTH_KV);
 
 	const users: AdminUser[] = [];
 	const metaResults = await Promise.all(
@@ -490,8 +503,7 @@ app.post("/api/users", async (c) => {
 	}
 
 	// Check if already in list
-	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids = await getAllowlist(c.env.OAUTH_KV);
 	if (ids.includes(discordId)) {
 		return c.json({ error: "User already in allowlist" }, 409);
 	}
@@ -515,7 +527,7 @@ app.post("/api/users", async (c) => {
 
 	ids.push(discordId);
 	await Promise.all([
-		c.env.OAUTH_KV.put("admin:allowlist", JSON.stringify(ids)),
+		c.env.OAUTH_KV.put(ALLOWLIST_KEY, JSON.stringify(ids)),
 		c.env.OAUTH_KV.put(`admin:user:${discordId}`, JSON.stringify(meta)),
 	]);
 
@@ -528,8 +540,7 @@ app.delete("/api/users/:id", async (c) => {
 		return c.json({ error: "Invalid user ID" }, 400);
 	}
 
-	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids = await getAllowlist(c.env.OAUTH_KV);
 	const filtered = ids.filter((id) => id !== targetId);
 
 	if (filtered.length === ids.length) {
@@ -537,7 +548,7 @@ app.delete("/api/users/:id", async (c) => {
 	}
 
 	await Promise.all([
-		c.env.OAUTH_KV.put("admin:allowlist", JSON.stringify(filtered)),
+		c.env.OAUTH_KV.put(ALLOWLIST_KEY, JSON.stringify(filtered)),
 		c.env.OAUTH_KV.delete(`admin:user:${targetId}`),
 	]);
 

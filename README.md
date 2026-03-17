@@ -76,7 +76,6 @@ The server runs at `http://localhost:8788`. The [MCP endpoint](https://modelcont
 | `DISCORD_CLIENT_SECRET` | OAuth2 client secret |
 | `DISCORD_BOT_TOKEN` | [Bot token](https://discord.com/developers/docs/reference#authentication) (used for all Discord API calls) |
 | `COOKIE_ENCRYPTION_KEY` | Random string for signing cookies — generate with `openssl rand -hex 16` |
-| `ALLOWED_DISCORD_USER_IDS` | Comma-separated [Discord user IDs](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID) allowed to authenticate (empty = all users) |
 | `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team name — required for the admin panel |
 | `CF_ACCESS_AUD` | Cloudflare Access Application Audience (AUD) tag — required for the admin panel |
 | `DEV_SKIP_CF_ACCESS` | Set to `true` to bypass CF Access JWT validation in local dev |
@@ -177,7 +176,7 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 
 ## Admin Panel
 
-The admin panel at `/admin` lets you add and remove allowed Discord users at runtime, without redeploying. It stores the allowlist in KV and the OAuth callback checks both the KV allowlist and the `ALLOWED_DISCORD_USER_IDS` env secret (union of both).
+The admin panel at `/admin` lets you add and remove allowed Discord users at runtime, without redeploying. The allowlist is stored in KV and is the sole source the OAuth callback checks. An empty allowlist means no restriction, so anyone can authenticate until you add the first user.
 
 ### Setup
 
@@ -189,11 +188,6 @@ The admin panel at `/admin` lets you add and remove allowed Discord users at run
 Once deployed, visit `https://<your-worker>.workers.dev/admin` to manage the allowlist.
 
 For local development, set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass CF Access JWT validation, then visit `http://localhost:8788/admin`.
-
-### Migration from env secret
-
-1. Both KV and `ALLOWED_DISCORD_USER_IDS` are checked (union). The admin panel manages KV only.
-2. Once all users are added via the panel, run `npx wrangler secret delete ALLOWED_DISCORD_USER_IDS` to remove the env secret.
 
 ## Observability
 
