@@ -240,6 +240,7 @@ app.get("/", (c) => {
 		td.mono { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted-foreground); }
 		td.muted { color: var(--muted-foreground); }
 		td.actions { text-align: right; width: 1%; }
+		td.outcome { min-width: 12rem; }
 		.empty { text-align: center; color: var(--muted-foreground); padding: 1rem 0; font-size: 0.875rem; }
 
 		/* Status */
@@ -262,6 +263,7 @@ app.get("/", (c) => {
 		}
 		.theme-toggle button:hover { color: var(--foreground); }
 		.theme-toggle button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+		td.audit-user { cursor: pointer; }
 	</style>
 </head>
 <body>
@@ -319,7 +321,7 @@ app.get("/", (c) => {
 				</div>
 				<div class="card">
 					<table>
-						<thead><tr><th>Time</th><th>User</th><th>Tool</th><th>Target</th><th>Duration</th><th>Outcome</th></tr></thead>
+						<thead><tr><th>Time</th><th>User</th><th>User ID</th><th>Tool</th><th>Target</th><th>Duration</th><th>Outcome</th></tr></thead>
 						<tbody id="auditList"></tbody>
 					</table>
 				</div>
@@ -450,16 +452,17 @@ app.get("/", (c) => {
 					const rowCls = e.outcome === "error" ? ' class="outcome-error"' : "";
 					html += "<tr" + rowCls + ">";
 					html += "<td>" + esc(time) + "</td>";
-					html += "<td>" + esc(e.username || e.user_id) + "</td>";
+					html += "<td>" + esc(e.username || "—") + "</td>";
+					html += '<td class="mono audit-user" data-user-id="' + esc(e.user_id) + '" title="Click to filter by this user">' + esc(e.user_id) + "</td>";
 					html += "<td>" + esc(e.tool) + "</td>";
 					html += '<td class="mono">' + esc(target) + "</td>";
 					html += "<td>" + e.duration_ms + "ms</td>";
-					html += "<td>" + outcome + "</td>";
+					html += '<td class="outcome">' + outcome + "</td>";
 					html += "</tr>";
 				}
 				el.innerHTML = html;
 			} catch (err) {
-				el.innerHTML = '<tr><td colspan="6" class="empty">Failed to load activity</td></tr>';
+				el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load activity</td></tr>';
 			}
 		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
@@ -467,6 +470,12 @@ app.get("/", (c) => {
 		});
 		document.getElementById("filterUser").addEventListener("keydown", function(e) {
 			if (e.key === "Enter") loadAudit();
+		});
+		document.getElementById("auditList").addEventListener("click", function(e) {
+			var cell = e.target.closest(".audit-user");
+			if (!cell) return;
+			document.getElementById("filterUser").value = cell.dataset.userId;
+			loadAudit();
 		});
 		document.getElementById("filterTool").addEventListener("change", loadAudit);
 		setTheme(getStoredTheme() || "light");
