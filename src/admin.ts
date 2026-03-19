@@ -1,8 +1,9 @@
 // Admin panel for managing the user allowlist
 
 import { Hono } from "hono";
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { cfAccessMiddleware } from "./cf-access";
-import { getUser } from "./discord-api";
+import { getUser, getChannel, listBotGuilds } from "./discord-api";
 
 interface AdminUser {
 	id: string;
@@ -26,8 +27,24 @@ export async function isUserAllowed(kv: KVNamespace, userId: string): Promise<bo
 	return ids.length === 0 || ids.includes(userId);
 }
 
+// Module-level name caches for audit enrichment. Survive warm isolates.
+type CacheEntry<T> = { value: T; expires: number };
+const NAME_CACHE_TTL_MS = 60_000;
+const guildNameCache = new Map<string, CacheEntry<string>>();
+const channelCache = new Map<string, CacheEntry<{ name: string; guild_id: string }>>();
+
+function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
+	const e = cache.get(key);
+	if (e && e.expires > Date.now()) return e.value;
+	if (e) cache.delete(key);
+	return undefined;
+}
+function writeCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T) {
+	cache.set(key, { value, expires: Date.now() + NAME_CACHE_TTL_MS });
+}
+
 const app = new Hono<{
-	Bindings: Env;
+	Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers };
 	Variables: { cfAccessEmail: string };
 }>();
 
@@ -249,6 +266,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		.status { padding: 0.5rem 0.75rem; border-radius: calc(var(--radius) - 2px); margin-top: 0.75rem; font-size: 0.8125rem; display: none; border: 1px solid; max-width: 32rem; }
 		.status.error { display: block; background: var(--status-error-bg); color: var(--status-error-fg); border-color: var(--status-error-border); }
 		.status.success { display: block; background: var(--status-success-bg); color: var(--status-success-fg); border-color: var(--status-success-border); }
+		.banner-warn { padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: 0.875rem; background: var(--status-error-bg); color: var(--status-error-fg); border: 1px solid var(--status-error-border); }
 
 		/* Theme toggle (segmented control) */
 		.theme-toggle { display: inline-flex; padding: 0.1875rem; background: var(--muted); border-radius: var(--radius); gap: 0; }
@@ -266,6 +284,13 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		.theme-toggle button:hover { color: var(--foreground); }
 		.theme-toggle button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
 		td.audit-user { cursor: pointer; }
+		tbody tr.audit-row { cursor: pointer; }
+		tr.detail-row { background: var(--muted); }
+		tr.detail-row:hover { background: var(--muted); }
+		tr.detail-row td { padding: 0.75rem 1rem; font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; }
+		.load-more { text-align: center; padding: 0.75rem; }
+		.hbar-row.clickable { cursor: pointer; }
+		.hbar-row.clickable:hover .hbar-label { color: var(--foreground); text-decoration: underline; }
 
 		/* Stat cards + charts */
 		.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
@@ -326,9 +351,10 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					</div>
 					<div id="addStatus" class="status"></div>
 				</div>
+				<div id="allowlistBanner"></div>
 				<div class="card">
 					<table>
-						<thead><tr><th>User</th><th>Username</th><th>User ID</th><th>Added</th><th></th></tr></thead>
+						<thead><tr><th>User</th><th>Username</th><th>User ID</th><th>Last seen</th><th>Calls</th><th>Added</th><th></th></tr></thead>
 						<tbody id="userList"></tbody>
 					</table>
 				</div>
@@ -385,6 +411,11 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 							<option>send_message</option>
 							<option>reply_to_message</option>
 						</select>
+						<select id="filterOutcome">
+							<option value="">All outcomes</option>
+							<option value="ok">OK only</option>
+							<option value="error">Errors only</option>
+						</select>
 						<input type="text" id="filterUser" placeholder="Filter by user ID" />
 						<button class="button button-primary" onclick="loadAudit()">Filter</button>
 					</div>
@@ -394,6 +425,9 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 						<thead><tr><th>Time</th><th>User</th><th>User ID</th><th>Tool</th><th>Target</th><th>Duration</th><th>Outcome</th></tr></thead>
 						<tbody id="auditList"></tbody>
 					</table>
+				</div>
+				<div class="load-more">
+					<button class="button button-ghost" id="loadMoreBtn" onclick="loadAudit(true)" style="display:none">Load more</button>
 				</div>
 			</div>
 			<div class="panel${act("settings")}" data-panel="settings">
@@ -444,24 +478,35 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		});
 		async function loadUsers() {
 			const el = document.getElementById("userList");
+			const banner = document.getElementById("allowlistBanner");
 			try {
 				const resp = await fetch("/admin/api/users");
 				const data = await resp.json();
+				const users = data.users || [];
+				if (users.length === 0) {
+					banner.className = "banner-warn";
+					banner.textContent = "Allowlist is empty — the OAuth gate is OPEN. Any Discord user can authenticate until you add at least one entry.";
+				} else {
+					banner.className = "";
+					banner.textContent = "";
+				}
 				let html = "";
-				for (const u of (data.users || [])) {
+				for (const u of users) {
 					const name = u.global_name || u.username || u.id;
 					const date = u.added_at ? new Date(u.added_at).toLocaleDateString() : "—";
 					html += "<tr>";
 					html += "<td><div class='user-cell'><div class='avatar'>" + esc(name.charAt(0)) + "</div><span class='user-name'>" + esc(name) + "</span></div></td>";
 					html += '<td class="mono">' + (u.username ? "@" + esc(u.username) : "—") + "</td>";
 					html += '<td class="mono">' + esc(u.id) + "</td>";
+					html += '<td class="muted">' + relTime(u.last_ts) + "</td>";
+					html += '<td class="mono">' + (u.calls || 0) + "</td>";
 					html += '<td class="muted">' + esc(date) + "</td>";
-					html += '<td class="actions"><button class="button button-ghost" onclick="removeUser(\\'' + esc(u.id) + "')\\">Remove</button></td>";
+					html += '<td class="actions"><button class="button button-ghost" onclick="removeUser(' + esc(JSON.stringify(u.id)) + ', ' + esc(JSON.stringify(name)) + ')">Remove</button></td>';
 					html += "</tr>";
 				}
 				el.innerHTML = html;
 			} catch (e) {
-				el.innerHTML = '<tr><td colspan="5" class="empty">Failed to load users</td></tr>';
+				el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load users</td></tr>';
 			}
 		}
 		async function addUser() {
@@ -496,8 +541,16 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				btn.disabled = false;
 			}
 		}
-		async function removeUser(id) {
-			if (!confirm("Remove user " + id + " from the allowlist?")) return;
+		async function removeUser(id, name) {
+			var grantCount = 0;
+			try {
+				const r = await fetch("/admin/api/users/" + id + "/grants");
+				const d = await r.json();
+				grantCount = d.count || 0;
+			} catch (e) {}
+			var msg = "Remove " + (name || id) + " from the allowlist?";
+			if (grantCount > 0) msg += " This will also revoke their " + grantCount + " active session(s).";
+			if (!confirm(msg)) return;
 			try {
 				const resp = await fetch("/admin/api/users/" + id, { method: "DELETE" });
 				if (!resp.ok) {
@@ -515,35 +568,70 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			d.textContent = String(s);
 			return d.innerHTML.replace(/"/g, "&quot;");
 		}
-		async function loadAudit() {
+		function relTime(ts) {
+			if (!ts) return "—";
+			var diff = Date.now() - ts;
+			var m = 60000, h = 60*m, d = 24*h;
+			if (diff < m) return "just now";
+			if (diff < h) return Math.floor(diff/m) + "m ago";
+			if (diff < d) return Math.floor(diff/h) + "h ago";
+			return Math.floor(diff/d) + "d ago";
+		}
+		var auditEvents = [];
+		var auditCursor = null;
+		async function loadAudit(append) {
+			if (append !== true) { auditEvents = []; auditCursor = null; append = false; }
 			const el = document.getElementById("auditList");
+			const btn = document.getElementById("loadMoreBtn");
 			const tool = document.getElementById("filterTool").value;
 			const userId = document.getElementById("filterUser").value.trim();
+			const outcome = document.getElementById("filterOutcome").value;
 			const params = new URLSearchParams({ limit: "50" });
 			if (tool) params.set("tool", tool);
 			if (userId) params.set("user_id", userId);
+			if (outcome) params.set("outcome", outcome);
+			if (append && auditCursor) params.set("before_id", auditCursor);
 			try {
 				const resp = await fetch("/admin/api/audit?" + params.toString());
 				const data = await resp.json();
+				const events = data.events || [];
+				const base = auditEvents.length;
+				auditEvents = auditEvents.concat(events);
+				if (events.length) auditCursor = events[events.length - 1].id;
 				let html = "";
-				for (const e of (data.events || [])) {
+				for (let i = 0; i < events.length; i++) {
+					const e = events[i];
 					const time = new Date(e.ts).toLocaleString();
-					const target = e.channel_id ? "ch " + e.channel_id : (e.guild_id ? "guild " + e.guild_id : "—");
-					const outcome = e.outcome === "error" ? (e.error ? esc(e.error.slice(0, 60)) : "error") : "ok";
-					const rowCls = e.outcome === "error" ? ' class="outcome-error"' : "";
-					html += "<tr" + rowCls + ">";
+					let target;
+					if (e.channel_name) {
+						target = (e.guild_name ? esc(e.guild_name) + " " : "") + "#" + esc(e.channel_name);
+					} else if (e.channel_id) {
+						target = "ch " + esc(e.channel_id);
+					} else if (e.guild_name) {
+						target = esc(e.guild_name);
+					} else if (e.guild_id) {
+						target = "guild " + esc(e.guild_id);
+					} else {
+						target = "—";
+					}
+					const outcomeText = e.outcome === "error" ? (e.error ? esc(e.error.slice(0, 60)) : "error") : "ok";
+					const rowCls = e.outcome === "error" ? "audit-row outcome-error" : "audit-row";
+					html += '<tr class="' + rowCls + '" data-idx="' + (base + i) + '">';
 					html += "<td>" + esc(time) + "</td>";
 					html += "<td>" + esc(e.username || "—") + "</td>";
 					html += '<td class="mono audit-user" data-user-id="' + esc(e.user_id) + '" title="Click to filter by this user">' + esc(e.user_id) + "</td>";
 					html += "<td>" + esc(e.tool) + "</td>";
-					html += '<td class="mono">' + esc(target) + "</td>";
+					html += '<td class="mono">' + target + "</td>";
 					html += "<td>" + e.duration_ms + "ms</td>";
-					html += '<td class="outcome">' + outcome + "</td>";
+					html += '<td class="outcome">' + outcomeText + "</td>";
 					html += "</tr>";
 				}
-				el.innerHTML = html;
+				if (append) el.insertAdjacentHTML("beforeend", html);
+				else el.innerHTML = html || '<tr><td colspan="7" class="empty">No activity</td></tr>';
+				btn.style.display = data.has_more ? "" : "none";
 			} catch (err) {
-				el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load activity</td></tr>';
+				if (!append) el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load activity</td></tr>';
+				btn.style.display = "none";
 			}
 		}
 		function rangeSince(key) {
@@ -564,14 +652,16 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			if (key === "365d") return now - 365 * D;
 			return now - D;
 		}
-		function hbarChart(rows, getLabel, getTotal, getErr) {
+		function hbarChart(rows, getLabel, getTotal, getErr, getKey) {
 			var max = Math.max(1, ...rows.map(getTotal));
 			var html = "";
 			for (const r of rows) {
 				var total = getTotal(r), err = getErr ? (getErr(r) || 0) : 0;
 				var okPct = ((total - err) / max * 100).toFixed(1);
 				var errPct = (err / max * 100).toFixed(1);
-				html += '<div class="hbar-row">';
+				var keyAttr = getKey ? ' data-key="' + esc(getKey(r)) + '"' : "";
+				var cls = getKey ? "hbar-row clickable" : "hbar-row";
+				html += '<div class="' + cls + '"' + keyAttr + '>';
 				html += '<span class="hbar-label" title="' + esc(getLabel(r)) + '">' + esc(getLabel(r)) + '</span>';
 				html += '<div class="hbar-track">';
 				html += '<div class="hbar-fill" style="width:' + okPct + '%"></div>';
@@ -598,10 +688,10 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				document.getElementById("statUsers").textContent = o.users || 0;
 
 				document.getElementById("chartByTool").innerHTML = hbarChart(
-					s.by_tool || [], function(t){return t.tool}, function(t){return t.calls}, function(t){return t.errors}
+					s.by_tool || [], function(t){return t.tool}, function(t){return t.calls}, function(t){return t.errors}, function(t){return t.tool}
 				);
 				document.getElementById("chartTopUsers").innerHTML = hbarChart(
-					s.top_users || [], function(u){return u.username || u.user_id}, function(u){return u.calls}
+					s.top_users || [], function(u){return u.username || u.user_id}, function(u){return u.calls}, null, function(u){return u.user_id}
 				);
 
 				var bucketMs = s.bucket_ms;
@@ -642,11 +732,45 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		});
 		document.getElementById("auditList").addEventListener("click", function(e) {
 			var cell = e.target.closest(".audit-user");
-			if (!cell) return;
-			document.getElementById("filterUser").value = cell.dataset.userId;
+			if (cell) {
+				document.getElementById("filterUser").value = cell.dataset.userId;
+				loadAudit();
+				return;
+			}
+			var row = e.target.closest("tr.audit-row");
+			if (!row) return;
+			var next = row.nextElementSibling;
+			if (next && next.classList.contains("detail-row")) { next.remove(); return; }
+			var ev = auditEvents[+row.dataset.idx];
+			if (!ev) return;
+			var detail = "";
+			if (ev.guild_id) detail += "guild_id:   " + ev.guild_id + "\\n";
+			if (ev.channel_id) detail += "channel_id: " + ev.channel_id + "\\n";
+			if (ev.message_id) detail += "message_id: " + ev.message_id + "\\n";
+			if (ev.error) detail += "\\nerror:\\n" + ev.error;
+			if (!detail) detail = "(no additional detail)";
+			var tr = document.createElement("tr");
+			tr.className = "detail-row";
+			var td = document.createElement("td");
+			td.colSpan = 7;
+			td.textContent = detail;
+			tr.appendChild(td);
+			row.after(tr);
+		});
+		document.getElementById("chartByTool").addEventListener("click", function(e) {
+			var row = e.target.closest(".hbar-row");
+			if (!row || !row.dataset.key) return;
+			document.getElementById("filterTool").value = row.dataset.key;
 			loadAudit();
 		});
-		document.getElementById("filterTool").addEventListener("change", loadAudit);
+		document.getElementById("chartTopUsers").addEventListener("click", function(e) {
+			var row = e.target.closest(".hbar-row");
+			if (!row || !row.dataset.key) return;
+			document.getElementById("filterUser").value = row.dataset.key;
+			loadAudit();
+		});
+		document.getElementById("filterTool").addEventListener("change", function() { loadAudit(); });
+		document.getElementById("filterOutcome").addEventListener("change", function() { loadAudit(); });
 		document.getElementById("statsRange").addEventListener("click", function(e) {
 			var btn = e.target.closest("button");
 			if (!btn || btn.classList.contains("active")) return;
@@ -682,7 +806,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 app.get("/api/users", async (c) => {
 	const ids = await getAllowlist(c.env.OAUTH_KV);
 
-	const users: AdminUser[] = [];
+	const users: (AdminUser & { last_ts?: number; calls?: number })[] = [];
 	const metaResults = await Promise.all(
 		ids.map((id) => c.env.OAUTH_KV.get(`admin:user:${id}`)),
 	);
@@ -694,7 +818,30 @@ app.get("/api/users", async (c) => {
 		}
 	}
 
+	if (ids.length) {
+		const placeholders = ids.map(() => "?").join(",");
+		const { results } = await c.env.AUDIT_DB.prepare(
+			`SELECT user_id, MAX(ts) AS last_ts, COUNT(*) AS calls FROM audit_log WHERE user_id IN (${placeholders}) GROUP BY user_id`,
+		)
+			.bind(...ids)
+			.all<{ user_id: string; last_ts: number; calls: number }>();
+		const byId = new Map(results.map((r) => [r.user_id, r]));
+		for (const u of users) {
+			const stats = byId.get(u.id);
+			if (stats) {
+				u.last_ts = stats.last_ts;
+				u.calls = stats.calls;
+			}
+		}
+	}
+
 	return c.json({ users });
+});
+
+app.get("/api/users/:id/grants", async (c) => {
+	const userId = c.req.param("id");
+	const { items } = await c.env.OAUTH_PROVIDER.listUserGrants(userId);
+	return c.json({ count: items.length });
 });
 
 app.post("/api/users", async (c) => {
@@ -754,6 +901,15 @@ app.delete("/api/users/:id", async (c) => {
 		c.env.OAUTH_KV.delete(`admin:user:${targetId}`),
 	]);
 
+	// Revoke active OAuth sessions. If this throws, the allowlist mutation
+	// above already landed — their next token refresh will be rejected anyway.
+	try {
+		const { items } = await c.env.OAUTH_PROVIDER.listUserGrants(targetId);
+		await Promise.all(items.map((g) => c.env.OAUTH_PROVIDER.revokeGrant(g.id, targetId)));
+	} catch (err) {
+		console.error("revokeGrant failed for", targetId, err);
+	}
+
 	return c.json({ ok: true });
 });
 
@@ -761,6 +917,8 @@ app.get("/api/audit", async (c) => {
 	const limit = Math.min(Number(c.req.query("limit")) || 50, 200);
 	const userId = c.req.query("user_id");
 	const tool = c.req.query("tool");
+	const outcome = c.req.query("outcome");
+	const beforeId = Number(c.req.query("before_id"));
 
 	const clauses: string[] = [];
 	const binds: (string | number)[] = [];
@@ -772,15 +930,76 @@ app.get("/api/audit", async (c) => {
 		clauses.push("tool = ?");
 		binds.push(tool);
 	}
+	if (outcome) {
+		clauses.push("outcome = ?");
+		binds.push(outcome);
+	}
+	if (Number.isFinite(beforeId) && beforeId > 0) {
+		clauses.push("id < ?");
+		binds.push(beforeId);
+	}
 	const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
 	const { results } = await c.env.AUDIT_DB.prepare(
-		`SELECT ts, tool, user_id, username, outcome, duration_ms, guild_id, channel_id, message_id, error FROM audit_log ${where} ORDER BY ts DESC LIMIT ?`,
+		`SELECT id, ts, tool, user_id, username, outcome, duration_ms, guild_id, channel_id, message_id, error FROM audit_log ${where} ORDER BY id DESC LIMIT ?`,
 	)
 		.bind(...binds, limit)
 		.all();
 
-	return c.json({ events: results });
+	type AuditRow = {
+		guild_id: string | null;
+		channel_id: string | null;
+		guild_name?: string;
+		channel_name?: string;
+		[k: string]: unknown;
+	};
+	const events = results as AuditRow[];
+	const token = c.env.DISCORD_BOT_TOKEN;
+
+	// getChannel() returns both name and guild_id — one call backfills both for
+	// rows that only carry channel_id.
+	const channelIds = [...new Set(events.map((e) => e.channel_id).filter((id): id is string => !!id))];
+	const uncachedCh = channelIds.filter((id) => !readCache(channelCache, id));
+	if (uncachedCh.length) {
+		await Promise.all(
+			uncachedCh.map(async (id) => {
+				try {
+					const ch = await getChannel(token, id);
+					writeCache(channelCache, id, { name: ch.name ?? id, guild_id: ch.guild_id ?? "" });
+				} catch {}
+			}),
+		);
+	}
+
+	const guildIds = new Set<string>();
+	for (const e of events) {
+		if (e.guild_id) guildIds.add(e.guild_id);
+		if (e.channel_id) {
+			const ch = readCache(channelCache, e.channel_id);
+			if (ch?.guild_id) guildIds.add(ch.guild_id);
+		}
+	}
+	if ([...guildIds].some((id) => !readCache(guildNameCache, id))) {
+		try {
+			const guilds = await listBotGuilds(token);
+			for (const g of guilds) writeCache(guildNameCache, g.id, g.name);
+		} catch {}
+	}
+
+	for (const e of events) {
+		if (e.channel_id) {
+			const ch = readCache(channelCache, e.channel_id);
+			if (ch) {
+				e.channel_name = ch.name;
+				if (!e.guild_id && ch.guild_id) e.guild_id = ch.guild_id;
+			}
+		}
+		if (e.guild_id) {
+			e.guild_name = readCache(guildNameCache, e.guild_id);
+		}
+	}
+
+	return c.json({ events, has_more: events.length === limit });
 });
 
 app.get("/api/audit/stats", async (c) => {
