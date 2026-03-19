@@ -287,8 +287,12 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		.sparkbar-col { flex: 1; background: var(--primary); border-radius: 1px 1px 0 0; min-height: 1px; transition: opacity 0.1s; }
 		.sparkbar-col:hover { opacity: 0.7; }
 		.sparkbar-col.zero { background: var(--muted); }
-		.sparkbar-axis { display: flex; margin-top: 0.375rem; font-size: 0.6875rem; color: var(--muted-foreground); font-family: var(--font-mono); }
+		.timeline-grid { display: grid; grid-template-columns: auto 1fr; column-gap: 0.5rem; row-gap: 0.375rem; align-items: start; }
+		.sparkbar-yaxis { display: flex; flex-direction: column; justify-content: space-between; height: 6rem; font-size: 0.6875rem; color: var(--muted-foreground); font-family: var(--font-mono); text-align: right; }
+		.sparkbar-axis { display: flex; font-size: 0.6875rem; color: var(--muted-foreground); font-family: var(--font-mono); }
 		.sparkbar-axis span { flex: 1; white-space: nowrap; overflow: hidden; }
+		.spark-tip { position: fixed; background: var(--foreground); color: var(--background); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: var(--font-mono); pointer-events: none; white-space: nowrap; z-index: 10; transform: translate(-50%, calc(-100% - 6px)); display: none; }
+		.spark-tip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 4px solid transparent; border-top-color: var(--foreground); }
 		.stats-range { height: 2rem; padding: 0 0.75rem; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); color: var(--foreground); font-size: 0.875rem; margin-bottom: 1rem; }
 		.stats-range:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
 		.chart-span { grid-column: 1 / -1; }
@@ -356,8 +360,12 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					</div>
 					<div class="card chart-card chart-span">
 						<div class="chart-title">Activity over time</div>
-						<div id="chartTimeline" class="sparkbar"></div>
-						<div id="chartTimelineAxis" class="sparkbar-axis"></div>
+						<div class="timeline-grid">
+							<div id="chartTimelineY" class="sparkbar-yaxis"></div>
+							<div id="chartTimeline" class="sparkbar"></div>
+							<div></div>
+							<div id="chartTimelineAxis" class="sparkbar-axis"></div>
+						</div>
 					</div>
 				</div>
 				<div class="section">
@@ -598,6 +606,8 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					if (h.bucket >= 0 && h.bucket < nBuckets) buckets[h.bucket] = h.calls;
 				}
 				var maxB = Math.max(1, ...buckets);
+				document.getElementById("chartTimelineY").innerHTML =
+					"<span>" + maxB + "</span><span>" + Math.round(maxB / 2) + "</span><span>0</span>";
 				var fmt = bucketMs < 86400000
 					? function(t){ return t.getHours() + ":00"; }
 					: function(t){ return (t.getMonth()+1) + "/" + t.getDate(); };
@@ -606,7 +616,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					var pct = (buckets[i] / maxB * 100).toFixed(1);
 					var label = fmt(new Date(windowStart + i * bucketMs));
 					var cls = buckets[i] === 0 ? "sparkbar-col zero" : "sparkbar-col";
-					tlHtml += '<div class="' + cls + '" style="height:' + pct + '%" title="' + label + ' — ' + buckets[i] + '"></div>';
+					tlHtml += '<div class="' + cls + '" style="height:' + pct + '%" data-tip="' + label + ' — ' + buckets[i] + '"></div>';
 				}
 				document.getElementById("chartTimeline").innerHTML = tlHtml;
 
@@ -632,6 +642,22 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		});
 		document.getElementById("filterTool").addEventListener("change", loadAudit);
 		document.getElementById("statsRange").addEventListener("change", loadStats);
+		(function() {
+			var tip = document.createElement("div");
+			tip.className = "spark-tip";
+			document.body.appendChild(tip);
+			var tl = document.getElementById("chartTimeline");
+			tl.addEventListener("mouseover", function(e) {
+				var col = e.target.closest(".sparkbar-col");
+				if (!col) return;
+				tip.textContent = col.dataset.tip;
+				var r = col.getBoundingClientRect();
+				tip.style.left = (r.left + r.width / 2) + "px";
+				tip.style.top = r.top + "px";
+				tip.style.display = "block";
+			});
+			tl.addEventListener("mouseleave", function() { tip.style.display = "none"; });
+		})();
 		setTheme(getStoredTheme() || "light");
 		var initialTab = document.body.dataset.tab;
 		history.replaceState({ tab: initialTab }, "", "/admin/" + initialTab);
