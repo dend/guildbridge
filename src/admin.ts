@@ -33,7 +33,10 @@ const app = new Hono<{
 
 app.use("*", cfAccessMiddleware);
 
-app.get("/", (c) => {
+app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
+	const seg = new URL(c.req.url).pathname.split("/").filter(Boolean).pop() ?? "";
+	const activeTab = seg === "activity" || seg === "settings" ? seg : "allowlist";
+	const act = (t: string) => (t === activeTab ? " active" : "");
 	const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 	const adminEmail = escapeHtml(c.get("cfAccessEmail"));
 	const html = `<!DOCTYPE html>
@@ -150,8 +153,9 @@ app.get("/", (c) => {
 		.content { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; }
 
 		/* Panel sections */
-		.panel { display: none; max-width: 48rem; }
+		.panel { display: none; }
 		.panel.active { display: block; }
+		.panel[data-panel="settings"] { max-width: 48rem; }
 		.panel-header { margin-bottom: 1rem; }
 		.panel-header h2 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -0.025em; }
 		.panel-header p { margin: 0.25rem 0 0; font-size: 0.875rem; color: var(--muted-foreground); }
@@ -224,10 +228,8 @@ app.get("/", (c) => {
 
 		/* User cell (allowlist) */
 		.user-cell { display: flex; align-items: center; gap: 0.625rem; }
-		.user-cell > div:last-child { line-height: 1.25; min-width: 0; }
 		.avatar { width: 2rem; height: 2rem; border-radius: 9999px; background: var(--muted); color: var(--muted-foreground); display: inline-flex; align-items: center; justify-content: center; font-weight: 500; flex-shrink: 0; text-transform: uppercase; }
 		.user-name { font-weight: 500; }
-		.user-sub { color: var(--muted-foreground); font-family: var(--font-mono); margin-top: 0.125rem; }
 
 		/* Table */
 		table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
@@ -240,7 +242,7 @@ app.get("/", (c) => {
 		td.mono { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted-foreground); }
 		td.muted { color: var(--muted-foreground); }
 		td.actions { text-align: right; width: 1%; }
-		td.outcome { min-width: 12rem; }
+		td.outcome { min-width: 18rem; word-break: break-word; }
 		.empty { text-align: center; color: var(--muted-foreground); padding: 1rem 0; font-size: 0.875rem; }
 
 		/* Status */
@@ -264,21 +266,42 @@ app.get("/", (c) => {
 		.theme-toggle button:hover { color: var(--foreground); }
 		.theme-toggle button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
 		td.audit-user { cursor: pointer; }
+
+		/* Stat cards + charts */
+		.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+		.stat-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; background: var(--card); }
+		.stat-label { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500; }
+		.stat-value { font-size: 1.5rem; font-weight: 600; margin-top: 0.125rem; font-variant-numeric: tabular-nums; }
+		.stat-value.danger { color: var(--destructive); }
+		.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+		.chart-card { padding: 0.875rem 1rem; }
+		.chart-title { font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); margin-bottom: 0.75rem; }
+		.hbar-row { display: flex; align-items: center; gap: 0.625rem; margin-bottom: 0.375rem; }
+		.hbar-row:last-child { margin-bottom: 0; }
+		.hbar-label { width: 9rem; flex-shrink: 0; font-family: var(--font-mono); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.hbar-track { flex: 1; height: 1.125rem; background: var(--muted); border-radius: 2px; overflow: hidden; display: flex; }
+		.hbar-fill { background: var(--primary); }
+		.hbar-fill-err { background: var(--destructive); }
+		.hbar-value { width: 2.5rem; text-align: right; font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted-foreground); flex-shrink: 0; }
+		.sparkbar { display: flex; align-items: flex-end; gap: 2px; height: 6rem; }
+		.sparkbar-col { flex: 1; background: var(--primary); border-radius: 1px 1px 0 0; min-height: 1px; transition: opacity 0.1s; }
+		.sparkbar-col:hover { opacity: 0.7; }
+		.sparkbar-col.zero { background: var(--muted); }
 	</style>
 </head>
-<body>
+<body data-tab="${activeTab}">
 	<header class="topbar">
 		<div class="topbar-title">GuildBridge Admin</div>
 		<div class="topbar-user">${adminEmail}</div>
 	</header>
 	<div class="layout">
 		<nav class="sidebar">
-			<a class="nav-item active" data-tab="allowlist">Allowlist</a>
-			<a class="nav-item" data-tab="activity">Activity</a>
-			<a class="nav-item" data-tab="settings">Settings</a>
+			<a class="nav-item${act("allowlist")}" href="/admin/allowlist" data-tab="allowlist">Allowlist</a>
+			<a class="nav-item${act("activity")}" href="/admin/activity" data-tab="activity">Activity</a>
+			<a class="nav-item${act("settings")}" href="/admin/settings" data-tab="settings">Settings</a>
 		</nav>
 		<main class="content">
-			<div class="panel active" data-panel="allowlist">
+			<div class="panel${act("allowlist")}" data-panel="allowlist">
 				<div class="panel-header">
 					<h2>Allowlist</h2>
 					<p>Manage which Discord users can authenticate with GuildBridge.</p>
@@ -293,15 +316,31 @@ app.get("/", (c) => {
 				</div>
 				<div class="card">
 					<table>
-						<thead><tr><th>User</th><th>Added</th><th></th></tr></thead>
+						<thead><tr><th>User</th><th>Username</th><th>User ID</th><th>Added</th><th></th></tr></thead>
 						<tbody id="userList"></tbody>
 					</table>
 				</div>
 			</div>
-			<div class="panel" data-panel="activity">
+			<div class="panel${act("activity")}" data-panel="activity">
 				<div class="panel-header">
 					<h2>Activity</h2>
 					<p>Recent MCP tool invocations across all users.</p>
+				</div>
+				<div class="stat-grid">
+					<div class="stat-card"><div class="stat-label">Calls (24h)</div><div class="stat-value" id="statTotal">—</div></div>
+					<div class="stat-card"><div class="stat-label">Errors</div><div class="stat-value" id="statErrors">—</div></div>
+					<div class="stat-card"><div class="stat-label">Avg duration</div><div class="stat-value" id="statDuration">—</div></div>
+					<div class="stat-card"><div class="stat-label">Active users</div><div class="stat-value" id="statUsers">—</div></div>
+				</div>
+				<div class="chart-grid">
+					<div class="card chart-card">
+						<div class="chart-title">Calls by tool</div>
+						<div id="chartByTool"></div>
+					</div>
+					<div class="card chart-card">
+						<div class="chart-title">Hourly activity</div>
+						<div id="chartHourly" class="sparkbar"></div>
+					</div>
 				</div>
 				<div class="section">
 					<div class="filter-row">
@@ -326,7 +365,7 @@ app.get("/", (c) => {
 					</table>
 				</div>
 			</div>
-			<div class="panel" data-panel="settings">
+			<div class="panel${act("settings")}" data-panel="settings">
 				<div class="panel-header">
 					<h2>Settings</h2>
 					<p>Preferences for this admin panel.</p>
@@ -354,13 +393,23 @@ app.get("/", (c) => {
 			b.addEventListener("click", function () { setTheme(b.dataset.theme); });
 		});
 
+		function showTab(tab) {
+			document.querySelectorAll(".nav-item").forEach(function (n) { n.classList.toggle("active", n.dataset.tab === tab); });
+			document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("active", p.dataset.panel === tab); });
+			if (tab === "activity") { loadStats(); loadAudit(); }
+			if (tab === "allowlist") loadUsers();
+		}
 		document.querySelectorAll(".nav-item").forEach(function (el) {
-			el.addEventListener("click", function () {
+			el.addEventListener("click", function (e) {
+				if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+				e.preventDefault();
 				var tab = el.dataset.tab;
-				document.querySelectorAll(".nav-item").forEach(function (n) { n.classList.toggle("active", n === el); });
-				document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("active", p.dataset.panel === tab); });
-				if (tab === "activity") loadAudit();
+				history.pushState({ tab: tab }, "", el.href);
+				showTab(tab);
 			});
+		});
+		window.addEventListener("popstate", function (e) {
+			showTab((e.state && e.state.tab) || "allowlist");
 		});
 		async function loadUsers() {
 			const el = document.getElementById("userList");
@@ -371,16 +420,17 @@ app.get("/", (c) => {
 				for (const u of (data.users || [])) {
 					const name = u.global_name || u.username || u.id;
 					const date = u.added_at ? new Date(u.added_at).toLocaleDateString() : "—";
-					const sub = (u.username ? "@" + esc(u.username) + " &middot; " : "") + esc(u.id);
 					html += "<tr>";
-					html += "<td><div class='user-cell'><div class='avatar'>" + esc(name.charAt(0)) + "</div><div><div class='user-name'>" + esc(name) + "</div><div class='user-sub'>" + sub + "</div></div></div></td>";
+					html += "<td><div class='user-cell'><div class='avatar'>" + esc(name.charAt(0)) + "</div><span class='user-name'>" + esc(name) + "</span></div></td>";
+					html += '<td class="mono">' + (u.username ? "@" + esc(u.username) : "—") + "</td>";
+					html += '<td class="mono">' + esc(u.id) + "</td>";
 					html += '<td class="muted">' + esc(date) + "</td>";
 					html += '<td class="actions"><button class="button button-ghost" onclick="removeUser(\\'' + esc(u.id) + "')\\">Remove</button></td>";
 					html += "</tr>";
 				}
 				el.innerHTML = html;
 			} catch (e) {
-				el.innerHTML = '<tr><td colspan="3" class="empty">Failed to load users</td></tr>';
+				el.innerHTML = '<tr><td colspan="5" class="empty">Failed to load users</td></tr>';
 			}
 		}
 		async function addUser() {
@@ -465,6 +515,53 @@ app.get("/", (c) => {
 				el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load activity</td></tr>';
 			}
 		}
+		async function loadStats() {
+			try {
+				const resp = await fetch("/admin/api/audit/stats");
+				const s = await resp.json();
+				const o = s.overview || {};
+				document.getElementById("statTotal").textContent = o.total || 0;
+				const errEl = document.getElementById("statErrors");
+				const errs = o.errors || 0;
+				errEl.textContent = errs;
+				errEl.classList.toggle("danger", errs > 0);
+				document.getElementById("statDuration").textContent = o.avg_ms != null ? Math.round(o.avg_ms) + "ms" : "—";
+				document.getElementById("statUsers").textContent = o.users || 0;
+
+				const tools = s.by_tool || [];
+				const maxCalls = Math.max(1, ...tools.map(function(t) { return t.calls; }));
+				let toolHtml = "";
+				for (const t of tools) {
+					const ok = t.calls - (t.errors || 0);
+					const okPct = (ok / maxCalls * 100).toFixed(1);
+					const errPct = ((t.errors || 0) / maxCalls * 100).toFixed(1);
+					toolHtml += '<div class="hbar-row">';
+					toolHtml += '<span class="hbar-label">' + esc(t.tool) + '</span>';
+					toolHtml += '<div class="hbar-track">';
+					toolHtml += '<div class="hbar-fill" style="width:' + okPct + '%"></div>';
+					if (t.errors) toolHtml += '<div class="hbar-fill-err" style="width:' + errPct + '%" title="' + t.errors + ' errors"></div>';
+					toolHtml += '</div>';
+					toolHtml += '<span class="hbar-value">' + t.calls + '</span>';
+					toolHtml += '</div>';
+				}
+				document.getElementById("chartByTool").innerHTML = toolHtml || '<div class="empty">No activity</div>';
+
+				const buckets = new Array(24).fill(0);
+				for (const h of (s.hourly || [])) {
+					if (h.bucket >= 0 && h.bucket < 24) buckets[h.bucket] = h.calls;
+				}
+				const maxHourly = Math.max(1, ...buckets);
+				const windowStart = Date.now() - 24 * 3600000;
+				let hourlyHtml = "";
+				for (let i = 0; i < 24; i++) {
+					const pct = (buckets[i] / maxHourly * 100).toFixed(1);
+					const hr = new Date(windowStart + i * 3600000).getHours();
+					const cls = buckets[i] === 0 ? "sparkbar-col zero" : "sparkbar-col";
+					hourlyHtml += '<div class="' + cls + '" style="height:' + pct + '%" title="' + hr + ':00 — ' + buckets[i] + '"></div>';
+				}
+				document.getElementById("chartHourly").innerHTML = hourlyHtml;
+			} catch (e) {}
+		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
 			if (e.key === "Enter") addUser();
 		});
@@ -479,7 +576,9 @@ app.get("/", (c) => {
 		});
 		document.getElementById("filterTool").addEventListener("change", loadAudit);
 		setTheme(getStoredTheme() || "light");
-		loadUsers();
+		var initialTab = document.body.dataset.tab;
+		history.replaceState({ tab: initialTab }, "", "/admin/" + initialTab);
+		showTab(initialTab);
 	</script>
 </body>
 </html>`;
@@ -588,6 +687,35 @@ app.get("/api/audit", async (c) => {
 		.all();
 
 	return c.json({ events: results });
+});
+
+app.get("/api/audit/stats", async (c) => {
+	const since = Date.now() - 24 * 60 * 60 * 1000;
+	const db = c.env.AUDIT_DB;
+
+	const [overview, byTool, hourly] = await db.batch([
+		db
+			.prepare(
+				"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN outcome='error' THEN 1 ELSE 0 END),0) AS errors, AVG(duration_ms) AS avg_ms, COUNT(DISTINCT user_id) AS users FROM audit_log WHERE ts > ?",
+			)
+			.bind(since),
+		db
+			.prepare(
+				"SELECT tool, COUNT(*) AS calls, SUM(CASE WHEN outcome='error' THEN 1 ELSE 0 END) AS errors FROM audit_log WHERE ts > ? GROUP BY tool ORDER BY calls DESC",
+			)
+			.bind(since),
+		db
+			.prepare(
+				"SELECT CAST((ts - ?) / 3600000 AS INTEGER) AS bucket, COUNT(*) AS calls FROM audit_log WHERE ts > ? GROUP BY bucket ORDER BY bucket",
+			)
+			.bind(since, since),
+	]);
+
+	return c.json({
+		overview: overview.results[0],
+		by_tool: byTool.results,
+		hourly: hourly.results,
+	});
 });
 
 export { app as adminApp };
