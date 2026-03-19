@@ -293,8 +293,11 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		.sparkbar-axis span { flex: 1; white-space: nowrap; overflow: hidden; }
 		.spark-tip { position: fixed; background: var(--foreground); color: var(--background); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: var(--font-mono); pointer-events: none; white-space: nowrap; z-index: 10; transform: translate(-50%, calc(-100% - 6px)); display: none; }
 		.spark-tip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 4px solid transparent; border-top-color: var(--foreground); }
-		.stats-range { height: 2rem; padding: 0 0.75rem; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); color: var(--foreground); font-size: 0.875rem; margin-bottom: 1rem; }
-		.stats-range:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
+		.stats-toolbar { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
+		.segmented { display: inline-flex; padding: 0.1875rem; background: var(--muted); border-radius: var(--radius); }
+		.segmented button { border: none; background: transparent; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 500; padding: 0.3125rem 0.75rem; border-radius: calc(var(--radius) - 2px); cursor: pointer; transition: background-color 0.15s, color 0.15s; font-family: inherit; }
+		.segmented button:hover { color: var(--foreground); }
+		.segmented button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
 		.chart-span { grid-column: 1 / -1; }
 	</style>
 </head>
@@ -335,14 +338,16 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					<h2>Activity</h2>
 					<p>Recent MCP tool invocations across all users.</p>
 				</div>
-				<select id="statsRange" class="stats-range">
-					<option value="24h">Last 24 hours</option>
-					<option value="week">This week</option>
-					<option value="month">This month</option>
-					<option value="60d">Last 60 days</option>
-					<option value="90d">Last 90 days</option>
-					<option value="365d">Last 365 days</option>
-				</select>
+				<div class="stats-toolbar">
+					<div class="segmented" id="statsRange">
+						<button type="button" data-range="24h" class="active">24h</button>
+						<button type="button" data-range="week">Week</button>
+						<button type="button" data-range="month">Month</button>
+						<button type="button" data-range="60d">60d</button>
+						<button type="button" data-range="90d">90d</button>
+						<button type="button" data-range="365d">1y</button>
+					</div>
+				</div>
 				<div class="stat-grid">
 					<div class="stat-card"><div class="stat-label">Calls</div><div class="stat-value" id="statTotal">—</div></div>
 					<div class="stat-card"><div class="stat-label">Errors</div><div class="stat-value" id="statErrors">—</div></div>
@@ -578,7 +583,8 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			return html || '<div class="empty">No activity</div>';
 		}
 		async function loadStats() {
-			var since = rangeSince(document.getElementById("statsRange").value);
+			var activeBtn = document.querySelector("#statsRange button.active");
+			var since = rangeSince(activeBtn ? activeBtn.dataset.range : "24h");
 			try {
 				const resp = await fetch("/admin/api/audit/stats?since=" + since);
 				const s = await resp.json();
@@ -641,7 +647,12 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			loadAudit();
 		});
 		document.getElementById("filterTool").addEventListener("change", loadAudit);
-		document.getElementById("statsRange").addEventListener("change", loadStats);
+		document.getElementById("statsRange").addEventListener("click", function(e) {
+			var btn = e.target.closest("button");
+			if (!btn || btn.classList.contains("active")) return;
+			this.querySelectorAll("button").forEach(function(b) { b.classList.toggle("active", b === btn); });
+			loadStats();
+		});
 		(function() {
 			var tip = document.createElement("div");
 			tip.className = "spark-tip";
