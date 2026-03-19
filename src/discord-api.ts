@@ -61,6 +61,8 @@ export interface DiscordEmbed {
 	description?: string;
 	url?: string;
 	type?: string;
+	author?: { name: string; icon_url?: string };
+	footer?: { text: string };
 }
 
 export interface DiscordMessageReference {
@@ -200,10 +202,11 @@ export async function sendMessage(
 	token: string,
 	channelId: string,
 	content: string,
+	embeds?: DiscordEmbed[],
 ): Promise<DiscordMessage> {
 	return discordFetch<DiscordMessage>(token, `/channels/${channelId}/messages`, {
 		method: "POST",
-		body: JSON.stringify({ content }),
+		body: JSON.stringify({ content, ...(embeds && { embeds }) }),
 	});
 }
 
@@ -212,12 +215,14 @@ export async function replyToMessage(
 	channelId: string,
 	messageId: string,
 	content: string,
+	embeds?: DiscordEmbed[],
 ): Promise<DiscordMessage> {
 	return discordFetch<DiscordMessage>(token, `/channels/${channelId}/messages`, {
 		method: "POST",
 		body: JSON.stringify({
 			content,
 			message_reference: { message_id: messageId },
+			...(embeds && { embeds }),
 		}),
 	});
 }

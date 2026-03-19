@@ -18,6 +18,7 @@ import {
 	computePermissions,
 	VIEW_CHANNEL,
 	CHANNEL_TYPE_NAMES,
+	type DiscordEmbed,
 } from "./discord-api";
 import type { Props } from "./utils";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -38,8 +39,18 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		const accessToken = this.props.accessToken;
 		const userId = this.props.userId;
 		const username = this.props.username;
+		const globalName = this.props.globalName;
+		const avatar = this.props.avatar;
 		const env = this.env;
 		const waitUntil = this.ctx.waitUntil.bind(this.ctx);
+
+		const attributionEmbed: DiscordEmbed = {
+			author: {
+				name: globalName ?? username,
+				...(avatar && { icon_url: `https://cdn.discordapp.com/avatars/${userId}/${avatar}.png` }),
+			},
+			footer: { text: "via GuildBridge" },
+		};
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		type ToolHandler<A> = (args: A, audit: AuditContext) => Promise<CallToolResult>;
@@ -403,7 +414,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 			async ({ channel_id, content }, audit) => {
 				await assertChannelAccess(channel_id);
-				const msg = await sendMessage(botToken, channel_id, content);
+				const msg = await sendMessage(botToken, channel_id, content, [attributionEmbed]);
 				audit.messageId = msg.id;
 				return {
 					content: [
@@ -438,7 +449,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			},
 			async ({ channel_id, message_id, content }, audit) => {
 				await assertChannelAccess(channel_id);
-				const msg = await replyToMessage(botToken, channel_id, message_id, content);
+				const msg = await replyToMessage(botToken, channel_id, message_id, content, [attributionEmbed]);
 				audit.messageId = msg.id;
 				return {
 					content: [
