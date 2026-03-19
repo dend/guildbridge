@@ -287,6 +287,11 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		.sparkbar-col { flex: 1; background: var(--primary); border-radius: 1px 1px 0 0; min-height: 1px; transition: opacity 0.1s; }
 		.sparkbar-col:hover { opacity: 0.7; }
 		.sparkbar-col.zero { background: var(--muted); }
+		.sparkbar-axis { display: flex; margin-top: 0.375rem; font-size: 0.6875rem; color: var(--muted-foreground); font-family: var(--font-mono); }
+		.sparkbar-axis span { flex: 1; white-space: nowrap; overflow: hidden; }
+		.stats-range { height: 2rem; padding: 0 0.75rem; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); color: var(--foreground); font-size: 0.875rem; margin-bottom: 1rem; }
+		.stats-range:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
+		.chart-span { grid-column: 1 / -1; }
 	</style>
 </head>
 <body data-tab="${activeTab}">
@@ -326,8 +331,16 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 					<h2>Activity</h2>
 					<p>Recent MCP tool invocations across all users.</p>
 				</div>
+				<select id="statsRange" class="stats-range">
+					<option value="24h">Last 24 hours</option>
+					<option value="week">This week</option>
+					<option value="month">This month</option>
+					<option value="60d">Last 60 days</option>
+					<option value="90d">Last 90 days</option>
+					<option value="365d">Last 365 days</option>
+				</select>
 				<div class="stat-grid">
-					<div class="stat-card"><div class="stat-label">Calls (24h)</div><div class="stat-value" id="statTotal">—</div></div>
+					<div class="stat-card"><div class="stat-label">Calls</div><div class="stat-value" id="statTotal">—</div></div>
 					<div class="stat-card"><div class="stat-label">Errors</div><div class="stat-value" id="statErrors">—</div></div>
 					<div class="stat-card"><div class="stat-label">Avg duration</div><div class="stat-value" id="statDuration">—</div></div>
 					<div class="stat-card"><div class="stat-label">Active users</div><div class="stat-value" id="statUsers">—</div></div>
@@ -338,8 +351,13 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 						<div id="chartByTool"></div>
 					</div>
 					<div class="card chart-card">
-						<div class="chart-title">Hourly activity</div>
-						<div id="chartHourly" class="sparkbar"></div>
+						<div class="chart-title">Top users</div>
+						<div id="chartTopUsers"></div>
+					</div>
+					<div class="card chart-card chart-span">
+						<div class="chart-title">Activity over time</div>
+						<div id="chartTimeline" class="sparkbar"></div>
+						<div id="chartTimelineAxis" class="sparkbar-axis"></div>
 					</div>
 				</div>
 				<div class="section">
@@ -481,8 +499,8 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		}
 		function esc(s) {
 			const d = document.createElement("div");
-			d.textContent = s;
-			return d.innerHTML;
+			d.textContent = String(s);
+			return d.innerHTML.replace(/"/g, "&quot;");
 		}
 		async function loadAudit() {
 			const el = document.getElementById("auditList");
@@ -515,9 +533,46 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				el.innerHTML = '<tr><td colspan="7" class="empty">Failed to load activity</td></tr>';
 			}
 		}
+		function rangeSince(key) {
+			var now = Date.now();
+			var D = 86400000;
+			if (key === "week") {
+				var d = new Date();
+				d.setHours(0, 0, 0, 0);
+				d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+				return d.getTime();
+			}
+			if (key === "month") {
+				var d = new Date();
+				return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+			}
+			if (key === "60d") return now - 60 * D;
+			if (key === "90d") return now - 90 * D;
+			if (key === "365d") return now - 365 * D;
+			return now - D;
+		}
+		function hbarChart(rows, getLabel, getTotal, getErr) {
+			var max = Math.max(1, ...rows.map(getTotal));
+			var html = "";
+			for (const r of rows) {
+				var total = getTotal(r), err = getErr ? (getErr(r) || 0) : 0;
+				var okPct = ((total - err) / max * 100).toFixed(1);
+				var errPct = (err / max * 100).toFixed(1);
+				html += '<div class="hbar-row">';
+				html += '<span class="hbar-label" title="' + esc(getLabel(r)) + '">' + esc(getLabel(r)) + '</span>';
+				html += '<div class="hbar-track">';
+				html += '<div class="hbar-fill" style="width:' + okPct + '%"></div>';
+				if (err) html += '<div class="hbar-fill-err" style="width:' + errPct + '%" title="' + err + ' errors"></div>';
+				html += '</div>';
+				html += '<span class="hbar-value">' + total + '</span>';
+				html += '</div>';
+			}
+			return html || '<div class="empty">No activity</div>';
+		}
 		async function loadStats() {
+			var since = rangeSince(document.getElementById("statsRange").value);
 			try {
-				const resp = await fetch("/admin/api/audit/stats");
+				const resp = await fetch("/admin/api/audit/stats?since=" + since);
 				const s = await resp.json();
 				const o = s.overview || {};
 				document.getElementById("statTotal").textContent = o.total || 0;
@@ -528,38 +583,39 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				document.getElementById("statDuration").textContent = o.avg_ms != null ? Math.round(o.avg_ms) + "ms" : "—";
 				document.getElementById("statUsers").textContent = o.users || 0;
 
-				const tools = s.by_tool || [];
-				const maxCalls = Math.max(1, ...tools.map(function(t) { return t.calls; }));
-				let toolHtml = "";
-				for (const t of tools) {
-					const ok = t.calls - (t.errors || 0);
-					const okPct = (ok / maxCalls * 100).toFixed(1);
-					const errPct = ((t.errors || 0) / maxCalls * 100).toFixed(1);
-					toolHtml += '<div class="hbar-row">';
-					toolHtml += '<span class="hbar-label">' + esc(t.tool) + '</span>';
-					toolHtml += '<div class="hbar-track">';
-					toolHtml += '<div class="hbar-fill" style="width:' + okPct + '%"></div>';
-					if (t.errors) toolHtml += '<div class="hbar-fill-err" style="width:' + errPct + '%" title="' + t.errors + ' errors"></div>';
-					toolHtml += '</div>';
-					toolHtml += '<span class="hbar-value">' + t.calls + '</span>';
-					toolHtml += '</div>';
-				}
-				document.getElementById("chartByTool").innerHTML = toolHtml || '<div class="empty">No activity</div>';
+				document.getElementById("chartByTool").innerHTML = hbarChart(
+					s.by_tool || [], function(t){return t.tool}, function(t){return t.calls}, function(t){return t.errors}
+				);
+				document.getElementById("chartTopUsers").innerHTML = hbarChart(
+					s.top_users || [], function(u){return u.username || u.user_id}, function(u){return u.calls}
+				);
 
-				const buckets = new Array(24).fill(0);
-				for (const h of (s.hourly || [])) {
-					if (h.bucket >= 0 && h.bucket < 24) buckets[h.bucket] = h.calls;
+				var bucketMs = s.bucket_ms;
+				var windowStart = s.since;
+				var nBuckets = Math.max(1, Math.ceil((Date.now() - windowStart) / bucketMs));
+				var buckets = new Array(nBuckets).fill(0);
+				for (const h of (s.timeline || [])) {
+					if (h.bucket >= 0 && h.bucket < nBuckets) buckets[h.bucket] = h.calls;
 				}
-				const maxHourly = Math.max(1, ...buckets);
-				const windowStart = Date.now() - 24 * 3600000;
-				let hourlyHtml = "";
-				for (let i = 0; i < 24; i++) {
-					const pct = (buckets[i] / maxHourly * 100).toFixed(1);
-					const hr = new Date(windowStart + i * 3600000).getHours();
-					const cls = buckets[i] === 0 ? "sparkbar-col zero" : "sparkbar-col";
-					hourlyHtml += '<div class="' + cls + '" style="height:' + pct + '%" title="' + hr + ':00 — ' + buckets[i] + '"></div>';
+				var maxB = Math.max(1, ...buckets);
+				var fmt = bucketMs < 86400000
+					? function(t){ return t.getHours() + ":00"; }
+					: function(t){ return (t.getMonth()+1) + "/" + t.getDate(); };
+				var tlHtml = "";
+				for (var i = 0; i < nBuckets; i++) {
+					var pct = (buckets[i] / maxB * 100).toFixed(1);
+					var label = fmt(new Date(windowStart + i * bucketMs));
+					var cls = buckets[i] === 0 ? "sparkbar-col zero" : "sparkbar-col";
+					tlHtml += '<div class="' + cls + '" style="height:' + pct + '%" title="' + label + ' — ' + buckets[i] + '"></div>';
 				}
-				document.getElementById("chartHourly").innerHTML = hourlyHtml;
+				document.getElementById("chartTimeline").innerHTML = tlHtml;
+
+				var step = Math.max(1, Math.ceil(nBuckets / 6));
+				var axisHtml = "";
+				for (var i = 0; i < nBuckets; i += step) {
+					axisHtml += '<span style="flex:' + Math.min(step, nBuckets - i) + '">' + fmt(new Date(windowStart + i * bucketMs)) + '</span>';
+				}
+				document.getElementById("chartTimelineAxis").innerHTML = axisHtml;
 			} catch (e) {}
 		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
@@ -575,6 +631,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			loadAudit();
 		});
 		document.getElementById("filterTool").addEventListener("change", loadAudit);
+		document.getElementById("statsRange").addEventListener("change", loadStats);
 		setTheme(getStoredTheme() || "light");
 		var initialTab = document.body.dataset.tab;
 		history.replaceState({ tab: initialTab }, "", "/admin/" + initialTab);
@@ -690,10 +747,20 @@ app.get("/api/audit", async (c) => {
 });
 
 app.get("/api/audit/stats", async (c) => {
-	const since = Date.now() - 24 * 60 * 60 * 1000;
-	const db = c.env.AUDIT_DB;
+	const now = Date.now();
+	const sinceParam = Number(c.req.query("since"));
+	const since =
+		Number.isFinite(sinceParam) && sinceParam > 0 && sinceParam < now
+			? sinceParam
+			: now - 24 * 60 * 60 * 1000;
 
-	const [overview, byTool, hourly] = await db.batch([
+	const H = 3600000;
+	const D = 24 * H;
+	const range = now - since;
+	const bucketMs = range <= 48 * H ? H : range <= 90 * D ? D : 7 * D;
+
+	const db = c.env.AUDIT_DB;
+	const [overview, byTool, topUsers, timeline] = await db.batch([
 		db
 			.prepare(
 				"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN outcome='error' THEN 1 ELSE 0 END),0) AS errors, AVG(duration_ms) AS avg_ms, COUNT(DISTINCT user_id) AS users FROM audit_log WHERE ts > ?",
@@ -706,15 +773,23 @@ app.get("/api/audit/stats", async (c) => {
 			.bind(since),
 		db
 			.prepare(
-				"SELECT CAST((ts - ?) / 3600000 AS INTEGER) AS bucket, COUNT(*) AS calls FROM audit_log WHERE ts > ? GROUP BY bucket ORDER BY bucket",
+				"SELECT user_id, MAX(username) AS username, COUNT(*) AS calls FROM audit_log WHERE ts > ? GROUP BY user_id ORDER BY calls DESC LIMIT 10",
 			)
-			.bind(since, since),
+			.bind(since),
+		db
+			.prepare(
+				"SELECT CAST((ts - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS calls FROM audit_log WHERE ts > ? GROUP BY bucket ORDER BY bucket",
+			)
+			.bind(since, bucketMs, since),
 	]);
 
 	return c.json({
+		since,
+		bucket_ms: bucketMs,
 		overview: overview.results[0],
 		by_tool: byTool.results,
-		hourly: hourly.results,
+		top_users: topUsers.results,
+		timeline: timeline.results,
 	});
 });
 
