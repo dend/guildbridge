@@ -20,11 +20,11 @@ async function getAllowlist(kv: KVNamespace): Promise<string[]> {
 	return raw ? JSON.parse(raw) : [];
 }
 
-// Single source of truth for the OAuth callback's user gate.
-// Empty allowlist = no restriction (fail-open for initial setup).
+// Single source of truth for the OAuth callback's user gate. Fail-closed:
+// an empty allowlist rejects everyone. Seed via /admin before first use.
 export async function isUserAllowed(kv: KVNamespace, userId: string): Promise<boolean> {
 	const ids = await getAllowlist(kv);
-	return ids.length === 0 || ids.includes(userId);
+	return ids.includes(userId);
 }
 
 // Module-level name caches for audit enrichment. Survive warm isolates.
@@ -485,7 +485,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				const users = data.users || [];
 				if (users.length === 0) {
 					banner.className = "banner-warn";
-					banner.textContent = "Allowlist is empty — the OAuth gate is OPEN. Any Discord user can authenticate until you add at least one entry.";
+					banner.textContent = "Allowlist is empty — nobody can authenticate. Add at least one Discord user to enable the MCP server.";
 				} else {
 					banner.className = "";
 					banner.textContent = "";

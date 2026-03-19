@@ -44,7 +44,7 @@ Guild owners bypass permission checks entirely.
 - Caches are in-memory Maps scoped to the `init()` closure, so they're per-session
 
 ### User allowlist (admin panel)
-User access is controlled by a KV-backed allowlist, managed at runtime via the `/admin` panel. The OAuth callback calls `isUserAllowed()` (exported from `admin.ts`), which is the single source of truth — empty list means no restriction (fail-open for initial setup).
+User access is controlled by a KV-backed allowlist, managed at runtime via the `/admin` panel. The OAuth callback calls `isUserAllowed()` (exported from `admin.ts`), which is the single source of truth — empty list rejects everyone (fail-closed; seed via `/admin` before first use).
 
 The admin panel (`/admin`) is a Hono sub-app mounted in `discord-handler.ts`. It is protected by Cloudflare Access (Zero Trust) externally, with defense-in-depth JWT validation in `cf-access.ts`. KV keys use the `admin:` prefix (`admin:allowlist` for the ID array, `admin:user:{id}` for per-user metadata).
 
