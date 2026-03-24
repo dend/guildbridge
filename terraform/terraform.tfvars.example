@@ -1,0 +1,13 @@
+cloudflare_account_id = "0123456789abcdef0123456789abcdef"
+
+# Where the Worker lives. No https://, no trailing slash.
+worker_hostname = "guildbridge.your-subdomain.workers.dev"
+
+# Who can reach /admin. Must match an IdP on your Zero Trust account.
+admin_emails = [
+  "you@example.com",
+]
+
+# Optional overrides
+# name_prefix            = "guildbridge"
+# admin_session_duration = "24h"

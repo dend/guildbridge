@@ -17,6 +17,9 @@ GuildBridge is a remote MCP server deployed on Cloudflare Workers. It exposes Di
 - **`src/discord-handler.ts`** — Discord OAuth flow (Hono routes)
 - **`src/utils.ts`** — OAuth token exchange helpers, `Props` type (user identity stored in auth token)
 - **`src/workers-oauth-utils.ts`** — CSRF/session/state management
+- **`src/cf-access.ts`** — Cloudflare Access JWT validation middleware
+- **`src/admin.ts`** — Admin panel UI + API: Allowlist tab (KV), Activity tab (D1 audit log)
+- **`src/audit.ts`** — Tool-call audit: dual-write to D1 + Analytics Engine
 
 ## Key Design Decisions
 
@@ -39,6 +42,21 @@ Guild owners bypass permission checks entirely.
 - **Guild membership** (`getUserGuildIds`): 60s TTL, keyed per MCP session
 - **Permission context** (`getGuildPermContext`): 60s TTL, keyed by guild ID per session
 - Caches are in-memory Maps scoped to the `init()` closure, so they're per-session
+
+### User allowlist (admin panel)
+User access is controlled by a KV-backed allowlist, managed at runtime via the `/admin` panel. The OAuth callback calls `isUserAllowed()` (exported from `admin.ts`), which is the single source of truth — empty list rejects everyone (fail-closed; seed via `/admin` before first use).
+
+The admin panel (`/admin`) is a Hono sub-app mounted in `discord-handler.ts`. It is protected by Cloudflare Access (Zero Trust) externally, with defense-in-depth JWT validation in `cf-access.ts`. KV keys use the `admin:` prefix (`admin:allowlist` for the ID array, `admin:user:{id}` for per-user metadata).
+
+**Required setup for the admin panel:**
+- Create a CF Access Application in Zero Trust dashboard for `<domain>/admin*`
+- Set secrets: `CF_ACCESS_TEAM_DOMAIN` (team name), `CF_ACCESS_AUD` (Application Audience tag)
+- For local dev: set `DEV_SKIP_CF_ACCESS=true` in `.dev.vars` to bypass JWT validation
+
+### Tool-call auditing
+Every tool invocation flows through the `tool()` wrapper in `index.ts` (defined at the top of `init()`). The wrapper times the call, passes an `AuditContext` bag the handler can write into (used by `send_message`/`reply_to_message` to surface the created `message_id`), and calls `recordAudit()` on both success and error paths. The D1 write is wrapped in `this.ctx.waitUntil()` so it never blocks the tool response; the Analytics Engine write is synchronous fire-and-forget.
+
+Analytics Engine is positional: `indexes[0]` = userId, `blobs` = `[tool, username, outcome, guildId, channelId, messageId, error]`, `doubles` = `[durationMs]`. In local dev the AE binding is a no-op stub — only D1 writes land locally.
 
 ### Search result filtering
 Search results don't include `permission_overwrites`, so we fetch channel info for each unique `channel_id` in the results (in parallel) and filter out messages from non-visible channels.
