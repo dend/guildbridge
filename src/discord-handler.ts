@@ -138,7 +138,7 @@ app.get("/callback", async (c) => {
 		return c.text("Invalid OAuth request data", 400);
 	}
 
-	const [accessToken, errResponse] = await fetchUpstreamAuthToken({
+	const [tokenResult, errResponse] = await fetchUpstreamAuthToken({
 		client_id: c.env.DISCORD_CLIENT_ID,
 		client_secret: c.env.DISCORD_CLIENT_SECRET,
 		code: c.req.query("code"),
@@ -146,6 +146,7 @@ app.get("/callback", async (c) => {
 		upstream_url: "https://discord.com/api/oauth2/token",
 	});
 	if (errResponse) return errResponse;
+	const { accessToken, expiresAt } = tokenResult;
 
 	// Fetch user info from Discord
 	const userResp = await fetch("https://discord.com/api/v10/users/@me", {
@@ -187,6 +188,7 @@ app.get("/callback", async (c) => {
 			globalName: user.global_name,
 			avatar: user.avatar,
 			accessToken,
+			expiresAt,
 		} as Props,
 	});
 

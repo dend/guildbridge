@@ -27,6 +27,11 @@ export function getUpstreamAuthorizeUrl({
  * Exchanges an authorization code for an access token at Discord's token endpoint.
  * Discord returns JSON (not form-encoded like GitHub).
  */
+export interface UpstreamToken {
+	accessToken: string;
+	expiresAt: number; // epoch ms when the Discord token expires (0 = unknown)
+}
+
 export async function fetchUpstreamAuthToken({
 	client_id,
 	client_secret,
@@ -39,7 +44,7 @@ export async function fetchUpstreamAuthToken({
 	client_secret: string;
 	redirect_uri: string;
 	client_id: string;
-}): Promise<[string, null] | [null, Response]> {
+}): Promise<[UpstreamToken, null] | [null, Response]> {
 	if (!code) {
 		return [null, new Response("Missing code", { status: 400 })];
 	}
@@ -63,13 +68,17 @@ export async function fetchUpstreamAuthToken({
 		return [null, new Response("Failed to fetch access token", { status: 500 })];
 	}
 
-	const body = (await resp.json()) as { access_token?: string };
+	const body = (await resp.json()) as { access_token?: string; expires_in?: number };
 	const accessToken = body.access_token;
 	if (!accessToken) {
 		return [null, new Response("Missing access token in response", { status: 400 })];
 	}
 
-	return [accessToken, null];
+	const expiresAt = body.expires_in
+		? Date.now() + body.expires_in * 1000
+		: 0;
+
+	return [{ accessToken, expiresAt }, null];
 }
 
 // Context from the auth process, encrypted & stored in the auth token
@@ -80,4 +89,5 @@ export type Props = {
 	globalName: string | null;
 	avatar: string | null;
 	accessToken: string;
+	expiresAt: number; // epoch ms when the Discord token expires (0 = unknown)
 };

@@ -4,6 +4,7 @@ import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { DiscordHandler } from "./discord-handler";
 import {
+	DiscordApiError,
 	listBotGuilds,
 	listUserGuilds,
 	listChannels,
@@ -43,10 +44,19 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			if (cachedGuildIds && Date.now() - cachedAt < 60_000) {
 				return cachedGuildIds;
 			}
-			const userGuilds = await listUserGuilds(accessToken);
-			cachedGuildIds = new Set(userGuilds.map((g) => g.id));
-			cachedAt = Date.now();
-			return cachedGuildIds;
+			try {
+				const userGuilds = await listUserGuilds(accessToken);
+				cachedGuildIds = new Set(userGuilds.map((g) => g.id));
+				cachedAt = Date.now();
+				return cachedGuildIds;
+			} catch (err) {
+				if (err instanceof DiscordApiError && err.status === 401) {
+					throw new Error(
+						"Your Discord authorization has expired or been revoked. Please re-authenticate to continue.",
+					);
+				}
+				throw err;
+			}
 		};
 
 		const assertGuildAccess = async (guildId: string) => {
@@ -413,8 +423,29 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 	}
 }
 
+// 5-minute buffer: trigger re-auth before the token actually expires
+// so that in-flight tool calls don't fail mid-execution.
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+const mcpHandler = GuildBridgeMCP.serve("/mcp");
+
+const apiHandlerWithExpiryCheck = {
+	async fetch<E>(request: Request, env: E, ctx: ExecutionContext) {
+		const props = (ctx as unknown as { props?: Props }).props;
+		if (props?.expiresAt && props.expiresAt < Date.now() + TOKEN_EXPIRY_BUFFER_MS) {
+			return new Response("Unauthorized", {
+				status: 401,
+				headers: {
+					"WWW-Authenticate": `Bearer error="invalid_token", error_description="Discord token expired"`,
+				},
+			});
+		}
+		return mcpHandler.fetch(request, env, ctx);
+	},
+};
+
 const provider = new OAuthProvider({
-	apiHandler: GuildBridgeMCP.serve("/mcp"),
+	apiHandler: apiHandlerWithExpiryCheck,
 	apiRoute: "/mcp",
 	authorizeEndpoint: "/authorize",
 	tokenEndpoint: "/token",

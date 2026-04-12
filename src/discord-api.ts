@@ -104,7 +104,7 @@ export const CHANNEL_TYPE_NAMES: Record<number, string> = {
 	16: "media",
 };
 
-class DiscordApiError extends Error {
+export class DiscordApiError extends Error {
 	constructor(
 		public status: number,
 		public body: string,
