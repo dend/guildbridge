@@ -74,9 +74,14 @@ export async function fetchUpstreamAuthToken({
 		return [null, new Response("Missing access token in response", { status: 400 })];
 	}
 
-	const expiresAt = body.expires_in
-		? Date.now() + body.expires_in * 1000
-		: 0;
+	const raw = body.expires_in;
+	const MAX_EXPIRES_IN = 2_592_000; // 30 days — Discord tokens never last longer
+	const DEFAULT_EXPIRES_IN = 604_800; // 7 days — conservative fallback
+	const clampedExpiresIn =
+		typeof raw === "number" && Number.isFinite(raw) && raw > 0
+			? Math.min(raw, MAX_EXPIRES_IN)
+			: DEFAULT_EXPIRES_IN;
+	const expiresAt = Date.now() + clampedExpiresIn * 1000;
 
 	return [{ accessToken, expiresAt }, null];
 }

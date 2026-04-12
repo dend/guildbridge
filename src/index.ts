@@ -36,11 +36,17 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		}
 		const accessToken = this.props.accessToken;
 		const userId = this.props.userId;
+		const tokenExpiresAt = this.props.expiresAt;
 
 		let cachedGuildIds: Set<string> | null = null;
 		let cachedAt = 0;
 
 		const getUserGuildIds = async () => {
+			if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+				throw new Error(
+					"Your Discord authorization has expired. Please re-authenticate to continue.",
+				);
+			}
 			if (cachedGuildIds && Date.now() - cachedAt < 60_000) {
 				return cachedGuildIds;
 			}
@@ -74,6 +80,11 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		}>();
 
 		const getGuildPermContext = async (guildId: string) => {
+			if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+				throw new Error(
+					"Your Discord authorization has expired. Please re-authenticate to continue.",
+				);
+			}
 			const cached = guildPermCache.get(guildId);
 			if (cached && Date.now() - cached.cachedAt < 60_000) return cached;
 
@@ -460,7 +471,7 @@ export default {
 		if (response.status === 401) {
 			const origin = new URL(request.url).origin;
 			const existingWwwAuth = response.headers.get("WWW-Authenticate");
-			if (existingWwwAuth) {
+			if (existingWwwAuth?.startsWith("Bearer")) {
 				const newResponse = new Response(response.body, response);
 				newResponse.headers.set(
 					"WWW-Authenticate",
