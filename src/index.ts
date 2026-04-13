@@ -145,11 +145,6 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		}>();
 
 		const getGuildPermContext = async (guildId: string) => {
-			if (tokenExpiresAt && tokenExpiresAt < Date.now() + TOKEN_EXPIRY_BUFFER_MS) {
-				throw new Error(
-					"Your Discord authorization has expired. Please re-authenticate to continue.",
-				);
-			}
 			const cached = guildPermCache.get(guildId);
 			if (cached && Date.now() - cached.cachedAt < 60_000) return cached;
 
