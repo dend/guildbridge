@@ -1,5 +1,6 @@
 // Admin panel for managing the user allowlist
 
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { cfAccessMiddleware } from "./cf-access";
 import { getUser } from "./discord-api";
@@ -24,7 +25,7 @@ function safeParseAllowlist(raw: string | null): string[] {
 }
 
 const app = new Hono<{
-	Bindings: Env;
+	Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers };
 	Variables: { cfAccessEmail: string };
 }>();
 
@@ -120,6 +121,10 @@ app.get("/", (c) => {
 			<h2>Allowed Users</h2>
 			<div id="userList"></div>
 		</div>
+		<div class="card">
+			<h2>Registered OAuth Clients</h2>
+			<div id="clientList"></div>
+		</div>
 	</div>
 	<script>
 		async function loadUsers() {
@@ -199,10 +204,40 @@ app.get("/", (c) => {
 			d.textContent = s;
 			return d.innerHTML;
 		}
+		async function loadClients() {
+			const el = document.getElementById("clientList");
+			try {
+				const resp = await fetch("/admin/api/clients");
+				const data = await resp.json();
+				if (!data.clients || data.clients.length === 0) {
+					el.innerHTML = '<div class="empty">No registered clients</div>';
+					return;
+				}
+				let html = "<table><thead><tr><th>Name</th><th>Client ID</th><th>Redirect URIs</th><th>Registered</th><th>Auth Method</th></tr></thead><tbody>";
+				for (const cl of data.clients) {
+					const name = cl.clientName || "—";
+					const uris = (cl.redirectUris || []).join(", ") || "—";
+					const date = cl.registrationDate ? new Date(cl.registrationDate * 1000).toLocaleDateString() : "—";
+					const authMethod = cl.tokenEndpointAuthMethod || "—";
+					html += "<tr>";
+					html += "<td>" + esc(name) + "</td>";
+					html += '<td class="mono">' + esc(cl.clientId) + "</td>";
+					html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(uris) + '">' + esc(uris) + "</td>";
+					html += "<td>" + esc(date) + "</td>";
+					html += "<td>" + esc(authMethod) + "</td>";
+					html += "</tr>";
+				}
+				html += "</tbody></table>";
+				el.innerHTML = html;
+			} catch (e) {
+				el.innerHTML = '<div class="empty">Failed to load clients</div>';
+			}
+		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
 			if (e.key === "Enter") addUser();
 		});
 		loadUsers();
+		loadClients();
 	</script>
 </body>
 </html>`;
@@ -299,6 +334,27 @@ app.delete("/api/users/:id", async (c) => {
 	]);
 
 	return c.json({ ok: true });
+});
+
+app.get("/api/clients", async (c) => {
+	try {
+		const result = await c.env.OAUTH_PROVIDER.listClients();
+		const clients = result.items.map((cl) => ({
+			clientId: cl.clientId,
+			clientName: cl.clientName ?? null,
+			redirectUris: cl.redirectUris,
+			registrationDate: cl.registrationDate ?? null,
+			tokenEndpointAuthMethod: cl.tokenEndpointAuthMethod,
+			grantTypes: cl.grantTypes ?? null,
+			responseTypes: cl.responseTypes ?? null,
+			clientUri: cl.clientUri ?? null,
+			logoUri: cl.logoUri ?? null,
+			contacts: cl.contacts ?? null,
+		}));
+		return c.json({ clients });
+	} catch {
+		return c.json({ clients: [] });
+	}
 });
 
 export { app as adminApp };
