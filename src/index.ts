@@ -482,7 +482,7 @@ export default {
 			const origin = new URL(request.url).origin;
 			const existingWwwAuth = response.headers.get("WWW-Authenticate");
 			if (existingWwwAuth && existingWwwAuth.toLowerCase().startsWith("bearer")) {
-				const newResponse = new Response(response.body, response);
+				const newResponse = new Response(response.clone().body, response);
 				newResponse.headers.set(
 					"WWW-Authenticate",
 					`${existingWwwAuth}, resource_metadata="${origin}/.well-known/oauth-protected-resource"`,

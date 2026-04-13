@@ -95,7 +95,8 @@ app.post("/authorize", async (c) => {
 		if (error instanceof OAuthError) {
 			return error.toResponse();
 		}
-		return c.text(`Internal server error: ${error.message}`, 500);
+		console.error("Unhandled authorize error:", error.message);
+		return c.text("Internal server error", 500);
 	}
 });
 
