@@ -106,6 +106,12 @@ export const CHANNEL_TYPE_NAMES: Record<number, string> = {
 	16: "media",
 };
 
+function sanitizeErrorBody(raw: string): string {
+	return (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
+		.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
+		.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
+}
+
 function assertSnowflake(value: string, label: string): void {
 	if (!/^\d{1,20}$/.test(value)) {
 		throw new DiscordApiError(400, `Invalid ${label}: ${value}`);
@@ -167,11 +173,7 @@ async function discordFetch<T>(
 	}
 
 	if (!resp.ok) {
-		const raw = await resp.text();
-		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
-			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
-			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
-		throw new DiscordApiError(resp.status, body);
+		throw new DiscordApiError(resp.status, sanitizeErrorBody(await resp.text()));
 	}
 
 	return resp.json() as Promise<T>;
@@ -192,11 +194,7 @@ export async function listUserGuilds(userAccessToken: string): Promise<DiscordGu
 		headers: { Authorization: `Bearer ${userAccessToken}` },
 	});
 	if (!resp.ok) {
-		const raw = await resp.text();
-		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
-			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
-			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
-		throw new DiscordApiError(resp.status, body);
+		throw new DiscordApiError(resp.status, sanitizeErrorBody(await resp.text()));
 	}
 	return resp.json() as Promise<DiscordGuild[]>;
 }
