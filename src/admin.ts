@@ -12,6 +12,17 @@ interface AdminUser {
 	added_by: string;
 }
 
+function safeParseAllowlist(raw: string | null): string[] {
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		console.error("Malformed allowlist in KV, treating as empty");
+		return [];
+	}
+}
+
 const app = new Hono<{
 	Bindings: Env;
 	Variables: { cfAccessEmail: string };
@@ -200,7 +211,7 @@ app.get("/", (c) => {
 
 app.get("/api/users", async (c) => {
 	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids: string[] = safeParseAllowlist(allowlistRaw);
 
 	const users: AdminUser[] = [];
 	const metaResults = await Promise.all(
@@ -208,7 +219,11 @@ app.get("/api/users", async (c) => {
 	);
 	for (let i = 0; i < ids.length; i++) {
 		if (metaResults[i]) {
-			users.push(JSON.parse(metaResults[i]!) as AdminUser);
+			try {
+				users.push(JSON.parse(metaResults[i]!) as AdminUser);
+			} catch {
+				users.push({ id: ids[i], username: "", global_name: null, added_at: "", added_by: "" });
+			}
 		} else {
 			users.push({ id: ids[i], username: "", global_name: null, added_at: "", added_by: "" });
 		}
@@ -224,9 +239,9 @@ app.post("/api/users", async (c) => {
 		return c.json({ error: "Invalid Discord user ID" }, 400);
 	}
 
-	// Check if already in list
+	// Early check before expensive Discord API call
 	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids: string[] = safeParseAllowlist(allowlistRaw);
 	if (ids.includes(discordId)) {
 		return c.json({ error: "User already in allowlist" }, 409);
 	}
@@ -248,9 +263,16 @@ app.post("/api/users", async (c) => {
 		added_by: adminEmail,
 	};
 
-	ids.push(discordId);
+	// Re-read allowlist after the Discord API call to minimize TOCTOU window
+	const freshRaw = await c.env.OAUTH_KV.get("admin:allowlist");
+	const freshIds: string[] = safeParseAllowlist(freshRaw);
+	if (freshIds.includes(discordId)) {
+		return c.json({ error: "User already in allowlist" }, 409);
+	}
+
+	freshIds.push(discordId);
 	await Promise.all([
-		c.env.OAUTH_KV.put("admin:allowlist", JSON.stringify(ids)),
+		c.env.OAUTH_KV.put("admin:allowlist", JSON.stringify(freshIds)),
 		c.env.OAUTH_KV.put(`admin:user:${discordId}`, JSON.stringify(meta)),
 	]);
 
@@ -264,7 +286,7 @@ app.delete("/api/users/:id", async (c) => {
 	}
 
 	const allowlistRaw = await c.env.OAUTH_KV.get("admin:allowlist");
-	const ids: string[] = allowlistRaw ? JSON.parse(allowlistRaw) : [];
+	const ids: string[] = safeParseAllowlist(allowlistRaw);
 	const filtered = ids.filter((id) => id !== targetId);
 
 	if (filtered.length === ids.length) {

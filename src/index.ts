@@ -54,7 +54,11 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 			}
 			// Re-check allowlist on cache miss (~every 60s)
 			const kvRaw = await oauthKv.get("admin:allowlist");
-			const kvAllowed: string[] = kvRaw ? JSON.parse(kvRaw) : [];
+			let kvAllowed: string[] = [];
+			if (kvRaw) {
+				try { kvAllowed = JSON.parse(kvRaw); } catch { /* corrupted KV */ }
+				if (!Array.isArray(kvAllowed)) kvAllowed = [];
+			}
 			const envAllowed = envAllowedRaw.split(",").map((id: string) => id.trim()).filter(Boolean);
 			const allowedUsers = new Set([...kvAllowed, ...envAllowed]);
 			if (allowedUsers.size > 0 && !allowedUsers.has(userId)) {

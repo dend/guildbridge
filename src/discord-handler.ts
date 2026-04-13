@@ -165,7 +165,11 @@ app.get("/callback", async (c) => {
 
 	// Check allowlist (union of KV + env secret)
 	const kvRaw = await env.OAUTH_KV.get("admin:allowlist");
-	const kvAllowed: string[] = kvRaw ? JSON.parse(kvRaw) : [];
+	let kvAllowed: string[] = [];
+	if (kvRaw) {
+		try { kvAllowed = JSON.parse(kvRaw); } catch { /* corrupted KV */ }
+		if (!Array.isArray(kvAllowed)) kvAllowed = [];
+	}
 	const envAllowed = (env.ALLOWED_DISCORD_USER_IDS || "")
 		.split(",")
 		.map((id) => id.trim())
