@@ -772,35 +772,6 @@ app.on("GET", ["/", "/allowlist", "/activity", "/clients", "/settings"], (c) => 
 				document.getElementById("chartTimelineAxis").innerHTML = axisHtml;
 			} catch (e) {}
 		}
-		async function loadClients() {
-			const el = document.getElementById("clientList");
-			try {
-				const resp = await fetch("/admin/api/clients");
-				const data = await resp.json();
-				if (!data.clients || data.clients.length === 0) {
-					el.innerHTML = '<div class="empty">No registered clients</div>';
-					return;
-				}
-				let html = "<table><thead><tr><th>Name</th><th>Client ID</th><th>Redirect URIs</th><th>Registered</th><th>Auth Method</th></tr></thead><tbody>";
-				for (const cl of data.clients) {
-					const name = cl.clientName || "—";
-					const uris = (cl.redirectUris || []).join(", ") || "—";
-					const date = cl.registrationDate ? new Date(cl.registrationDate * 1000).toLocaleDateString() : "—";
-					const authMethod = cl.tokenEndpointAuthMethod || "—";
-					html += "<tr>";
-					html += "<td>" + esc(name) + "</td>";
-					html += '<td class="mono">' + esc(cl.clientId) + "</td>";
-					html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(uris) + '">' + esc(uris) + "</td>";
-					html += "<td>" + esc(date) + "</td>";
-					html += "<td>" + esc(authMethod) + "</td>";
-					html += "</tr>";
-				}
-				html += "</tbody></table>";
-				el.innerHTML = html;
-			} catch (e) {
-				el.innerHTML = '<div class="empty">Failed to load clients</div>';
-			}
-		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
 			if (e.key === "Enter") addUser();
 		});
