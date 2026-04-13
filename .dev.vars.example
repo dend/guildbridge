@@ -2,3 +2,8 @@ DISCORD_CLIENT_ID=your_discord_client_id
 DISCORD_CLIENT_SECRET=your_discord_client_secret
 DISCORD_BOT_TOKEN=your_discord_bot_token
 COOKIE_ENCRYPTION_KEY=generate_a_random_32_char_string
+# Optional — only needed if you want to test the admin panel locally.
+# Set DEV_SKIP_CF_ACCESS=true to bypass CF Access JWT validation in local dev.
+# CF_ACCESS_TEAM_DOMAIN=your_team_name
+# CF_ACCESS_AUD=your_application_audience_tag
+# DEV_SKIP_CF_ACCESS=true
