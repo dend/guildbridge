@@ -272,11 +272,11 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
 	const redirectUris =
 		client?.redirectUris && client.redirectUris.length > 0
 			? client.redirectUris
-					.map((uri) => {
-						const validated = sanitizeUrl(uri);
-						return validated ? sanitizeText(validated) : "";
-					})
-					.filter((uri) => uri !== "")
+				.map((uri) => {
+					const validated = sanitizeUrl(uri);
+					return validated ? sanitizeText(validated) : "";
+				})
+				.filter((uri) => uri !== "")
 			: [];
 
 	const htmlContent = `
