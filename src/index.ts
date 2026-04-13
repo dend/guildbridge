@@ -37,18 +37,28 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		const accessToken = this.props.accessToken;
 		const userId = this.props.userId;
 		const tokenExpiresAt = this.props.expiresAt;
+		const oauthKv = this.env.OAUTH_KV;
+		const envAllowedRaw = this.env.ALLOWED_DISCORD_USER_IDS || "";
 
 		let cachedGuildIds: Set<string> | null = null;
 		let cachedAt = 0;
 
 		const getUserGuildIds = async () => {
-			if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+			if (tokenExpiresAt && tokenExpiresAt < Date.now() + TOKEN_EXPIRY_BUFFER_MS) {
 				throw new Error(
 					"Your Discord authorization has expired. Please re-authenticate to continue.",
 				);
 			}
 			if (cachedGuildIds && Date.now() - cachedAt < 60_000) {
 				return cachedGuildIds;
+			}
+			// Re-check allowlist on cache miss (~every 60s)
+			const kvRaw = await oauthKv.get("admin:allowlist");
+			const kvAllowed: string[] = kvRaw ? JSON.parse(kvRaw) : [];
+			const envAllowed = envAllowedRaw.split(",").map((id: string) => id.trim()).filter(Boolean);
+			const allowedUsers = new Set([...kvAllowed, ...envAllowed]);
+			if (allowedUsers.size > 0 && !allowedUsers.has(userId)) {
+				throw new Error("Access denied: you are no longer authorized.");
 			}
 			try {
 				const userGuilds = await listUserGuilds(accessToken);
@@ -80,7 +90,7 @@ export class GuildBridgeMCP extends McpAgent<Env, Record<string, never>, Props> 
 		}>();
 
 		const getGuildPermContext = async (guildId: string) => {
-			if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+			if (tokenExpiresAt && tokenExpiresAt < Date.now() + TOKEN_EXPIRY_BUFFER_MS) {
 				throw new Error(
 					"Your Discord authorization has expired. Please re-authenticate to continue.",
 				);
@@ -471,7 +481,7 @@ export default {
 		if (response.status === 401) {
 			const origin = new URL(request.url).origin;
 			const existingWwwAuth = response.headers.get("WWW-Authenticate");
-			if (existingWwwAuth?.startsWith("Bearer")) {
+			if (existingWwwAuth && existingWwwAuth.toLowerCase().startsWith("bearer")) {
 				const newResponse = new Response(response.body, response);
 				newResponse.headers.set(
 					"WWW-Authenticate",

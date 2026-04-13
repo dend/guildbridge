@@ -147,7 +147,8 @@ async function discordFetch<T>(
 
 	if (resp.status === 429) {
 		const retryAfter = resp.headers.get("Retry-After");
-		const retrySeconds = retryAfter ? parseFloat(retryAfter) : 5;
+		const parsed = retryAfter ? parseFloat(retryAfter) : NaN;
+		const retrySeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
 		rateLimitedUntil = Date.now() + retrySeconds * 1000;
 		throw new DiscordApiError(
 			429,
@@ -165,7 +166,9 @@ async function discordFetch<T>(
 
 	if (!resp.ok) {
 		const raw = await resp.text();
-		const body = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
+			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
+			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
 		throw new DiscordApiError(resp.status, body);
 	}
 
@@ -177,12 +180,20 @@ export async function listBotGuilds(token: string): Promise<DiscordGuild[]> {
 }
 
 export async function listUserGuilds(userAccessToken: string): Promise<DiscordGuild[]> {
+	if (Date.now() < rateLimitedUntil) {
+		throw new DiscordApiError(
+			429,
+			`Rate limited. Try again in ${Math.ceil((rateLimitedUntil - Date.now()) / 1000)}s`,
+		);
+	}
 	const resp = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
 		headers: { Authorization: `Bearer ${userAccessToken}` },
 	});
 	if (!resp.ok) {
 		const raw = await resp.text();
-		const body = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
+			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
+			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
 		throw new DiscordApiError(resp.status, body);
 	}
 	return resp.json() as Promise<DiscordGuild[]>;
@@ -209,6 +220,8 @@ export async function readMessages(
 	opts: { limit?: number; before?: string; after?: string } = {},
 ): Promise<DiscordMessage[]> {
 	assertSnowflake(channelId, "channel ID");
+	if (opts.before) assertSnowflake(opts.before, "message ID (before)");
+	if (opts.after) assertSnowflake(opts.after, "message ID (after)");
 	const params = new URLSearchParams();
 	if (opts.limit) params.set("limit", String(opts.limit));
 	if (opts.before) params.set("before", opts.before);

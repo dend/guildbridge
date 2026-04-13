@@ -172,7 +172,8 @@ app.get("/callback", async (c) => {
 	const allowedUsers = new Set([...kvAllowed, ...envAllowed]);
 
 	if (allowedUsers.size > 0 && !allowedUsers.has(user.id)) {
-		return c.text(`Access denied: user ${user.username} (${user.id}) is not authorized`, 403);
+		console.log(`Allowlist rejection: user ${user.username} (${user.id})`);
+		return c.text("Access denied", 403);
 	}
 
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
