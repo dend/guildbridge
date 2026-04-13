@@ -166,7 +166,7 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 
 | Tool | Description |
 |---|---|
-| `list_guilds` | List servers the bot is in |
+| `list_guilds` | List Discord servers you are in |
 | `list_channels` | List channels in a server (optionally filtered by type) |
 | `get_channel_info` | Get channel details (topic, type, etc.) |
 | `read_messages` | Read messages from a channel (with pagination) |
@@ -176,7 +176,7 @@ Enter the URL above, complete the Discord OAuth flow, and the tools will become 
 
 ## Admin Panel
 
-The admin panel at `/admin` lets you add and remove allowed Discord users at runtime, without redeploying. The allowlist is stored in KV and is the sole source the OAuth callback checks. An empty allowlist means no restriction, so anyone can authenticate until you add the first user.
+The admin panel at `/admin` lets you add and remove allowed Discord users at runtime, without redeploying. The allowlist is stored in KV and is the sole source the OAuth callback checks. The allowlist is **fail-closed** — an empty list rejects everyone, so you must seed at least one user via `/admin` before the first OAuth login will succeed.
 
 ### Setup
 

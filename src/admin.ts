@@ -57,9 +57,9 @@ const app = new Hono<{
 
 app.use("*", cfAccessMiddleware);
 
-app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
+app.on("GET", ["/", "/allowlist", "/activity", "/clients", "/settings"], (c) => {
 	const seg = new URL(c.req.url).pathname.split("/").filter(Boolean).pop() ?? "";
-	const activeTab = seg === "activity" || seg === "settings" ? seg : "allowlist";
+	const activeTab = seg === "activity" || seg === "clients" || seg === "settings" ? seg : "allowlist";
 	const act = (t: string) => (t === activeTab ? " active" : "");
 	const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 	const adminEmail = escapeHtml(c.get("cfAccessEmail"));
