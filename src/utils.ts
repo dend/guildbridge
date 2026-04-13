@@ -27,6 +27,11 @@ export function getUpstreamAuthorizeUrl({
  * Exchanges an authorization code for an access token at Discord's token endpoint.
  * Discord returns JSON (not form-encoded like GitHub).
  */
+export interface UpstreamToken {
+	accessToken: string;
+	expiresAt: number; // epoch ms when the Discord token expires (0 = unknown)
+}
+
 export async function fetchUpstreamAuthToken({
 	client_id,
 	client_secret,
@@ -39,7 +44,7 @@ export async function fetchUpstreamAuthToken({
 	client_secret: string;
 	redirect_uri: string;
 	client_id: string;
-}): Promise<[string, null] | [null, Response]> {
+}): Promise<[UpstreamToken, null] | [null, Response]> {
 	if (!code) {
 		return [null, new Response("Missing code", { status: 400 })];
 	}
@@ -63,13 +68,22 @@ export async function fetchUpstreamAuthToken({
 		return [null, new Response("Failed to fetch access token", { status: 500 })];
 	}
 
-	const body = (await resp.json()) as { access_token?: string };
+	const body = (await resp.json()) as { access_token?: string; expires_in?: number };
 	const accessToken = body.access_token;
 	if (!accessToken) {
 		return [null, new Response("Missing access token in response", { status: 400 })];
 	}
 
-	return [accessToken, null];
+	const raw = body.expires_in;
+	const MAX_EXPIRES_IN = 2_592_000; // 30 days — Discord tokens never last longer
+	const DEFAULT_EXPIRES_IN = 604_800; // 7 days — conservative fallback
+	const clampedExpiresIn =
+		typeof raw === "number" && Number.isFinite(raw) && raw > 0
+			? Math.min(raw, MAX_EXPIRES_IN)
+			: DEFAULT_EXPIRES_IN;
+	const expiresAt = Date.now() + clampedExpiresIn * 1000;
+
+	return [{ accessToken, expiresAt }, null];
 }
 
 // Context from the auth process, encrypted & stored in the auth token
@@ -80,4 +94,5 @@ export type Props = {
 	globalName: string | null;
 	avatar: string | null;
 	accessToken: string;
+	expiresAt: number; // epoch ms when the Discord token expires (0 = unknown)
 };

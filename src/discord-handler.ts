@@ -95,7 +95,8 @@ app.post("/authorize", async (c) => {
 		if (error instanceof OAuthError) {
 			return error.toResponse();
 		}
-		return c.text(`Internal server error: ${error.message}`, 500);
+		console.error("Unhandled authorize error:", error.message);
+		return c.text("Internal server error", 500);
 	}
 });
 
@@ -138,7 +139,7 @@ app.get("/callback", async (c) => {
 		return c.text("Invalid OAuth request data", 400);
 	}
 
-	const [accessToken, errResponse] = await fetchUpstreamAuthToken({
+	const [tokenResult, errResponse] = await fetchUpstreamAuthToken({
 		client_id: c.env.DISCORD_CLIENT_ID,
 		client_secret: c.env.DISCORD_CLIENT_SECRET,
 		code: c.req.query("code"),
@@ -146,6 +147,7 @@ app.get("/callback", async (c) => {
 		upstream_url: "https://discord.com/api/oauth2/token",
 	});
 	if (errResponse) return errResponse;
+	const { accessToken, expiresAt } = tokenResult;
 
 	// Fetch user info from Discord
 	const userResp = await fetch("https://discord.com/api/v10/users/@me", {
@@ -162,7 +164,8 @@ app.get("/callback", async (c) => {
 	};
 
 	if (!(await isUserAllowed(env.OAUTH_KV, user.id))) {
-		return c.text(`Access denied: user ${user.username} (${user.id}) is not authorized`, 403);
+		console.log(`Allowlist rejection: user ${user.username} (${user.id})`);
+		return c.text("Access denied", 403);
 	}
 
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
@@ -178,6 +181,7 @@ app.get("/callback", async (c) => {
 			globalName: user.global_name,
 			avatar: user.avatar,
 			accessToken,
+			expiresAt,
 		} as Props,
 	});
 

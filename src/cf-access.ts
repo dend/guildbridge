@@ -112,6 +112,11 @@ export const cfAccessMiddleware = createMiddleware<{
 	Variables: { cfAccessEmail: string };
 }>(async (c, next) => {
 	if (c.env.DEV_SKIP_CF_ACCESS) {
+		if (c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUD) {
+			console.error("DEV_SKIP_CF_ACCESS is set but CF Access is configured — refusing to bypass in what appears to be a production environment");
+			return c.text("Forbidden: misconfigured environment", 403);
+		}
+		console.warn("DEV_SKIP_CF_ACCESS: bypassing CF Access validation");
 		c.set("cfAccessEmail", "dev@localhost");
 		return next();
 	}

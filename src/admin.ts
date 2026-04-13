@@ -1,7 +1,7 @@
 // Admin panel for managing the user allowlist
 
-import { Hono } from "hono";
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { Hono } from "hono";
 import { cfAccessMiddleware } from "./cf-access";
 import { getUser, getChannel, listBotGuilds } from "./discord-api";
 
@@ -17,7 +17,14 @@ const ALLOWLIST_KEY = "admin:allowlist";
 
 async function getAllowlist(kv: KVNamespace): Promise<string[]> {
 	const raw = await kv.get(ALLOWLIST_KEY);
-	return raw ? JSON.parse(raw) : [];
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		console.error("Malformed allowlist in KV, treating as empty");
+		return [];
+	}
 }
 
 // Single source of truth for the OAuth callback's user gate. Fail-closed:
@@ -335,6 +342,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		<nav class="sidebar">
 			<a class="nav-item${act("allowlist")}" href="/admin/allowlist" data-tab="allowlist">Allowlist</a>
 			<a class="nav-item${act("activity")}" href="/admin/activity" data-tab="activity">Activity</a>
+			<a class="nav-item${act("clients")}" href="/admin/clients" data-tab="clients">Clients</a>
 			<a class="nav-item${act("settings")}" href="/admin/settings" data-tab="settings">Settings</a>
 		</nav>
 		<main class="content">
@@ -428,6 +436,18 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				</div>
 				<div class="load-more">
 					<button class="button button-ghost" id="loadMoreBtn" onclick="loadAudit(true)" style="display:none">Load more</button>
+				</div>
+			</div>
+			<div class="panel${act("clients")}" data-panel="clients">
+				<div class="panel-header">
+					<h2>Registered OAuth Clients</h2>
+					<p>OAuth clients that have registered with GuildBridge.</p>
+				</div>
+				<div class="card">
+					<table>
+						<thead><tr><th>Name</th><th>Client ID</th><th>Redirect URIs</th><th>Registered</th><th>Auth Method</th></tr></thead>
+						<tbody id="clientList"></tbody>
+					</table>
 				</div>
 			</div>
 			<div class="panel${act("settings")}" data-panel="settings">
@@ -577,6 +597,34 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 			if (diff < d) return Math.floor(diff/h) + "h ago";
 			return Math.floor(diff/d) + "d ago";
 		}
+		async function loadClients() {
+			const el = document.getElementById("clientList");
+			try {
+				const resp = await fetch("/admin/api/clients");
+				const data = await resp.json();
+				if (!data.clients || data.clients.length === 0) {
+					el.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted-fg);padding:2rem">No registered clients</td></tr>';
+					return;
+				}
+				let html = "";
+				for (const cl of data.clients) {
+					const name = cl.clientName || "\u2014";
+					const uris = (cl.redirectUris || []).join(", ") || "\u2014";
+					const date = cl.registrationDate ? new Date(cl.registrationDate * 1000).toLocaleDateString() : "\u2014";
+					const authMethod = cl.tokenEndpointAuthMethod || "\u2014";
+					html += "<tr>";
+					html += "<td>" + esc(name) + "</td>";
+					html += "<td><code>" + esc(cl.clientId) + "</code></td>";
+					html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(uris) + '">' + esc(uris) + "</td>";
+					html += "<td>" + esc(date) + "</td>";
+					html += "<td>" + esc(authMethod) + "</td>";
+					html += "</tr>";
+				}
+				el.innerHTML = html;
+			} catch (e) {
+				el.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted-fg);padding:2rem">Failed to load clients</td></tr>';
+			}
+		}
 		var auditEvents = [];
 		var auditCursor = null;
 		async function loadAudit(append) {
@@ -724,6 +772,35 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 				document.getElementById("chartTimelineAxis").innerHTML = axisHtml;
 			} catch (e) {}
 		}
+		async function loadClients() {
+			const el = document.getElementById("clientList");
+			try {
+				const resp = await fetch("/admin/api/clients");
+				const data = await resp.json();
+				if (!data.clients || data.clients.length === 0) {
+					el.innerHTML = '<div class="empty">No registered clients</div>';
+					return;
+				}
+				let html = "<table><thead><tr><th>Name</th><th>Client ID</th><th>Redirect URIs</th><th>Registered</th><th>Auth Method</th></tr></thead><tbody>";
+				for (const cl of data.clients) {
+					const name = cl.clientName || "—";
+					const uris = (cl.redirectUris || []).join(", ") || "—";
+					const date = cl.registrationDate ? new Date(cl.registrationDate * 1000).toLocaleDateString() : "—";
+					const authMethod = cl.tokenEndpointAuthMethod || "—";
+					html += "<tr>";
+					html += "<td>" + esc(name) + "</td>";
+					html += '<td class="mono">' + esc(cl.clientId) + "</td>";
+					html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(uris) + '">' + esc(uris) + "</td>";
+					html += "<td>" + esc(date) + "</td>";
+					html += "<td>" + esc(authMethod) + "</td>";
+					html += "</tr>";
+				}
+				html += "</tbody></table>";
+				el.innerHTML = html;
+			} catch (e) {
+				el.innerHTML = '<div class="empty">Failed to load clients</div>';
+			}
+		}
 		document.getElementById("userId").addEventListener("keydown", function(e) {
 			if (e.key === "Enter") addUser();
 		});
@@ -797,6 +874,7 @@ app.on("GET", ["/", "/allowlist", "/activity", "/settings"], (c) => {
 		var initialTab = document.body.dataset.tab;
 		history.replaceState({ tab: initialTab }, "", "/admin/" + initialTab);
 		showTab(initialTab);
+		loadClients();
 	</script>
 </body>
 </html>`;
@@ -812,7 +890,11 @@ app.get("/api/users", async (c) => {
 	);
 	for (let i = 0; i < ids.length; i++) {
 		if (metaResults[i]) {
-			users.push(JSON.parse(metaResults[i]!) as AdminUser);
+			try {
+				users.push(JSON.parse(metaResults[i]!) as AdminUser);
+			} catch {
+				users.push({ id: ids[i], username: "", global_name: null, added_at: "", added_by: "" });
+			}
 		} else {
 			users.push({ id: ids[i], username: "", global_name: null, added_at: "", added_by: "" });
 		}
@@ -851,7 +933,7 @@ app.post("/api/users", async (c) => {
 		return c.json({ error: "Invalid Discord user ID" }, 400);
 	}
 
-	// Check if already in list
+	// Early check before expensive Discord API call
 	const ids = await getAllowlist(c.env.OAUTH_KV);
 	if (ids.includes(discordId)) {
 		return c.json({ error: "User already in allowlist" }, 409);
@@ -874,9 +956,15 @@ app.post("/api/users", async (c) => {
 		added_by: adminEmail,
 	};
 
-	ids.push(discordId);
+	// Re-read allowlist after the Discord API call to minimize TOCTOU window
+	const freshIds = await getAllowlist(c.env.OAUTH_KV);
+	if (freshIds.includes(discordId)) {
+		return c.json({ error: "User already in allowlist" }, 409);
+	}
+
+	freshIds.push(discordId);
 	await Promise.all([
-		c.env.OAUTH_KV.put(ALLOWLIST_KEY, JSON.stringify(ids)),
+		c.env.OAUTH_KV.put(ALLOWLIST_KEY, JSON.stringify(freshIds)),
 		c.env.OAUTH_KV.put(`admin:user:${discordId}`, JSON.stringify(meta)),
 	]);
 
@@ -911,6 +999,27 @@ app.delete("/api/users/:id", async (c) => {
 	}
 
 	return c.json({ ok: true });
+});
+
+app.get("/api/clients", async (c) => {
+	try {
+		const result = await c.env.OAUTH_PROVIDER.listClients();
+		const clients = result.items.map((cl) => ({
+			clientId: cl.clientId,
+			clientName: cl.clientName ?? null,
+			redirectUris: cl.redirectUris,
+			registrationDate: cl.registrationDate ?? null,
+			tokenEndpointAuthMethod: cl.tokenEndpointAuthMethod,
+			grantTypes: cl.grantTypes ?? null,
+			responseTypes: cl.responseTypes ?? null,
+			clientUri: cl.clientUri ?? null,
+			logoUri: cl.logoUri ?? null,
+			contacts: cl.contacts ?? null,
+		}));
+		return c.json({ clients });
+	} catch {
+		return c.json({ clients: [] });
+	}
 });
 
 app.get("/api/audit", async (c) => {

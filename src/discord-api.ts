@@ -106,7 +106,13 @@ export const CHANNEL_TYPE_NAMES: Record<number, string> = {
 	16: "media",
 };
 
-class DiscordApiError extends Error {
+function assertSnowflake(value: string, label: string): void {
+	if (!/^\d{1,20}$/.test(value)) {
+		throw new DiscordApiError(400, `Invalid ${label}: ${value}`);
+	}
+}
+
+export class DiscordApiError extends Error {
 	constructor(
 		public status: number,
 		public body: string,
@@ -117,11 +123,20 @@ class DiscordApiError extends Error {
 	}
 }
 
+let rateLimitedUntil = 0;
+
 async function discordFetch<T>(
 	token: string,
 	path: string,
 	options: RequestInit = {},
 ): Promise<T> {
+	if (Date.now() < rateLimitedUntil) {
+		throw new DiscordApiError(
+			429,
+			`Rate limited. Try again in ${Math.ceil((rateLimitedUntil - Date.now()) / 1000)}s`,
+		);
+	}
+
 	const url = `${DISCORD_API_BASE}${path}`;
 	const resp = await fetch(url, {
 		...options,
@@ -134,10 +149,13 @@ async function discordFetch<T>(
 
 	if (resp.status === 429) {
 		const retryAfter = resp.headers.get("Retry-After");
+		const parsed = retryAfter ? parseFloat(retryAfter) : NaN;
+		const retrySeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+		rateLimitedUntil = Date.now() + retrySeconds * 1000;
 		throw new DiscordApiError(
 			429,
-			`Rate limited. Retry after ${retryAfter}s`,
-			retryAfter ? parseFloat(retryAfter) : undefined,
+			`Rate limited. Retry after ${retrySeconds}s`,
+			retrySeconds,
 		);
 	}
 
@@ -149,7 +167,10 @@ async function discordFetch<T>(
 	}
 
 	if (!resp.ok) {
-		const body = await resp.text();
+		const raw = await resp.text();
+		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
+			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
+			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
 		throw new DiscordApiError(resp.status, body);
 	}
 
@@ -161,24 +182,37 @@ export async function listBotGuilds(token: string): Promise<DiscordGuild[]> {
 }
 
 export async function listUserGuilds(userAccessToken: string): Promise<DiscordGuild[]> {
+	if (Date.now() < rateLimitedUntil) {
+		throw new DiscordApiError(
+			429,
+			`Rate limited. Try again in ${Math.ceil((rateLimitedUntil - Date.now()) / 1000)}s`,
+		);
+	}
 	const resp = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
 		headers: { Authorization: `Bearer ${userAccessToken}` },
 	});
 	if (!resp.ok) {
-		throw new DiscordApiError(resp.status, await resp.text());
+		const raw = await resp.text();
+		const body = (raw.length > 200 ? raw.slice(0, 200) + "…" : raw)
+			.replace(/Bot\s+[\w.-]+/g, "Bot [REDACTED]")
+			.replace(/Bearer\s+[\w.-]+/g, "Bearer [REDACTED]");
+		throw new DiscordApiError(resp.status, body);
 	}
 	return resp.json() as Promise<DiscordGuild[]>;
 }
 
 export async function getGuild(token: string, guildId: string): Promise<DiscordGuild> {
+	assertSnowflake(guildId, "guild ID");
 	return discordFetch<DiscordGuild>(token, `/guilds/${guildId}?with_counts=true`);
 }
 
 export async function listChannels(token: string, guildId: string): Promise<DiscordChannel[]> {
+	assertSnowflake(guildId, "guild ID");
 	return discordFetch<DiscordChannel[]>(token, `/guilds/${guildId}/channels`);
 }
 
 export async function getChannel(token: string, channelId: string): Promise<DiscordChannel> {
+	assertSnowflake(channelId, "channel ID");
 	return discordFetch<DiscordChannel>(token, `/channels/${channelId}`);
 }
 
@@ -187,6 +221,9 @@ export async function readMessages(
 	channelId: string,
 	opts: { limit?: number; before?: string; after?: string } = {},
 ): Promise<DiscordMessage[]> {
+	assertSnowflake(channelId, "channel ID");
+	if (opts.before) assertSnowflake(opts.before, "message ID (before)");
+	if (opts.after) assertSnowflake(opts.after, "message ID (after)");
 	const params = new URLSearchParams();
 	if (opts.limit) params.set("limit", String(opts.limit));
 	if (opts.before) params.set("before", opts.before);
@@ -204,6 +241,7 @@ export async function sendMessage(
 	content: string,
 	embeds?: DiscordEmbed[],
 ): Promise<DiscordMessage> {
+	assertSnowflake(channelId, "channel ID");
 	return discordFetch<DiscordMessage>(token, `/channels/${channelId}/messages`, {
 		method: "POST",
 		body: JSON.stringify({ content, ...(embeds && { embeds }) }),
@@ -217,6 +255,8 @@ export async function replyToMessage(
 	content: string,
 	embeds?: DiscordEmbed[],
 ): Promise<DiscordMessage> {
+	assertSnowflake(channelId, "channel ID");
+	assertSnowflake(messageId, "message ID");
 	return discordFetch<DiscordMessage>(token, `/channels/${channelId}/messages`, {
 		method: "POST",
 		body: JSON.stringify({
@@ -228,6 +268,7 @@ export async function replyToMessage(
 }
 
 export async function getUser(token: string, userId: string): Promise<DiscordUser> {
+	assertSnowflake(userId, "user ID");
 	return discordFetch<DiscordUser>(token, `/users/${userId}`);
 }
 
@@ -236,10 +277,13 @@ export async function getGuildMember(
 	guildId: string,
 	userId: string,
 ): Promise<DiscordGuildMember> {
+	assertSnowflake(guildId, "guild ID");
+	assertSnowflake(userId, "user ID");
 	return discordFetch<DiscordGuildMember>(token, `/guilds/${guildId}/members/${userId}`);
 }
 
 export async function getGuildRoles(token: string, guildId: string): Promise<DiscordRole[]> {
+	assertSnowflake(guildId, "guild ID");
 	return discordFetch<DiscordRole[]>(token, `/guilds/${guildId}/roles`);
 }
 
@@ -313,6 +357,9 @@ export async function searchMessages(
 		sortOrder?: string;
 	} = {},
 ): Promise<DiscordSearchResult> {
+	assertSnowflake(guildId, "guild ID");
+	if (opts.channelId) assertSnowflake(opts.channelId, "channel ID");
+	if (opts.authorId) assertSnowflake(opts.authorId, "author ID");
 	const params = new URLSearchParams();
 	params.set("content", query);
 	if (opts.channelId) params.set("channel_id", opts.channelId);
