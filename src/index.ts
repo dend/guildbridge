@@ -6,6 +6,7 @@ import { DiscordHandler } from "./discord-handler";
 import { isUserAllowed } from "./admin";
 import {
 	DiscordApiError,
+	verifyUserToken,
 	listBotGuilds,
 	listUserGuilds,
 	listChannels,
@@ -502,16 +503,32 @@ const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 const mcpHandler = GuildBridgeMCP.serve("/mcp");
 
+const unauthorized = (desc: string) =>
+	new Response("Unauthorized", {
+		status: 401,
+		headers: {
+			"WWW-Authenticate": `Bearer error="invalid_token", error_description="${desc}"`,
+		},
+	});
+
 const apiHandlerWithExpiryCheck = {
 	async fetch<E>(request: Request, env: E, ctx: ExecutionContext) {
 		const props = (ctx as unknown as { props?: Props }).props;
 		if (props?.expiresAt && props.expiresAt < Date.now() + TOKEN_EXPIRY_BUFFER_MS) {
-			return new Response("Unauthorized", {
-				status: 401,
-				headers: {
-					"WWW-Authenticate": `Bearer error="invalid_token", error_description="Discord token expired"`,
-				},
-			});
+			return unauthorized("Discord token expired");
+		}
+		// Live pre-flight: catches upstream revocation (user deauthorized app,
+		// password change) that the stored expiresAt cannot know about. POST-only
+		// so we never burn a Discord call on the long-lived GET SSE stream.
+		if (request.method === "POST" && props?.accessToken) {
+			try {
+				await verifyUserToken(props.accessToken);
+			} catch (err) {
+				if (err instanceof DiscordApiError && err.status === 401) {
+					return unauthorized("Discord token revoked");
+				}
+				// 429/5xx/network: fall through; the tool handler will surface it.
+			}
 		}
 		return mcpHandler.fetch(request, env, ctx);
 	},

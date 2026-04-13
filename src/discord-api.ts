@@ -183,6 +183,15 @@ export async function listBotGuilds(token: string): Promise<DiscordGuild[]> {
 	return discordFetch<DiscordGuild[]>(token, "/users/@me/guilds");
 }
 
+export async function verifyUserToken(userAccessToken: string): Promise<void> {
+	const resp = await fetch(`${DISCORD_API_BASE}/oauth2/@me`, {
+		headers: { Authorization: `Bearer ${userAccessToken}` },
+	});
+	if (!resp.ok) {
+		throw new DiscordApiError(resp.status, sanitizeErrorBody(await resp.text()));
+	}
+}
+
 export async function listUserGuilds(userAccessToken: string): Promise<DiscordGuild[]> {
 	if (Date.now() < rateLimitedUntil) {
 		throw new DiscordApiError(
