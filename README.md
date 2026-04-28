@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/dend-guildbridge-badge.png)](https://mseep.ai/app/dend-guildbridge)
+
 <h1>
 <p align="center">
   GuildBridge
